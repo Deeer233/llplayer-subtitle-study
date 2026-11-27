@@ -8,6 +8,7 @@ param(
     [string]$RunDirectory,
     [string]$ExpectedUser,
     [string]$ExpectedPrograms,
+    [switch]$RegisteredUninstallEntry,
     [switch]$VerifyArtifactsOnly
 )
 
@@ -64,6 +65,14 @@ function Read-Registration(
     } finally { $base.Dispose() }
 }
 
+function Assert-NoUserRegistration {
+    foreach ($view in 'Registry64', 'Registry32') {
+        if ($null -ne (Read-Registration -View $view)) {
+            throw "Unexpected current-user uninstall entry ($view): HKCU\$regPath"
+        }
+    }
+}
+
 function Assert-NoMachineRegistration {
     foreach ($view in 'Registry64', 'Registry32') {
         if ($null -ne (Read-Registration -Hive LocalMachine -View $view)) {
@@ -72,14 +81,18 @@ function Assert-NoMachineRegistration {
     }
 }
 
-function Invoke-QuietNsis([string]$Path, [string]$Arguments, [string]$LogName) {
-    $process = New-HiddenProcess -FilePath $Path -Directory $run -Arguments @() -ChildEnvironment @{ TEMP = $temp; TMP = $temp }
-    # NSIS treats the last /D= or _?= value as the rest of the raw command line, including spaces.
-    $process.Arguments = $Arguments
-    $timer = [Diagnostics.Stopwatch]::StartNew()
-    $result = Invoke-HiddenProcess -Info $process -TimeoutSeconds 240
-    $timer.Stop()
+function Invoke-QuietNsis([string]$Path, [string]$Arguments, [string]$LogName, [int]$TimeoutSeconds = 240) {
     $log = Join-Path $run $LogName
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $process = New-HiddenProcess -FilePath $Path -Directory $run -Arguments @() -ChildEnvironment @{ TEMP = $temp; TMP = $temp }
+        # NSIS treats the last /D= or _?= value as the rest of the raw command line, including spaces.
+        $process.Arguments = $Arguments
+        $result = Invoke-HiddenProcess -Info $process -TimeoutSeconds $TimeoutSeconds
+    } catch {
+        [IO.File]::WriteAllText($log, "arguments=$Arguments`nelapsedMs=$($timer.ElapsedMilliseconds)`nerror=$($_.Exception.Message)`n")
+        throw
+    } finally { $timer.Stop() }
     [IO.File]::WriteAllText($log, "exitCode=$($result.ExitCode)`nelapsedMs=$($timer.ElapsedMilliseconds)`n$($result.Out)$($result.Err)")
     [ordered]@{ path = $Path; arguments = $Arguments; exitCode = $result.ExitCode; elapsedMs = $timer.ElapsedMilliseconds; log = $log }
 }
@@ -111,7 +124,10 @@ if ([IO.Path]::GetFileName($run) -notmatch '^polish-install-check-144e1786-[a-z0
 }
 Assert-AbsentFileSystemPath $run
 $target = Join-Path $run 'app'
-if (($target.Length + $manifest.Longest) -gt 246) { throw "Test install path exceeds the installer limit: $target" }
+$occupiedTarget = Join-Path $run 'used'
+foreach ($installTarget in $target, $occupiedTarget) {
+    if (($installTarget.Length + $manifest.Longest) -gt 246) { throw "Test install path exceeds the installer limit: $installTarget" }
+}
 [void](New-Item -ItemType Directory -Path $run)
 $temp = [IO.Directory]::CreateDirectory((Join-Path $run 'tmp')).FullName
 $receipt = Join-Path $run 'report.json'
@@ -138,10 +154,43 @@ try {
     $report.registration = "HKCU\$regPath"
     Assert-AbsentFileSystemPath $link
     Assert-AbsentFileSystemPath $target
-    if ($null -ne (Read-Registration)) { throw "Refusing to replace an existing uninstall entry: HKCU\$regPath" }
+    Assert-NoUserRegistration
     Assert-NoMachineRegistration
 
+    $report.stage = 'silent install into an occupied directory'
+    $report.existingTarget = $occupiedTarget
+    Assert-AbsentFileSystemPath $occupiedTarget
+    [void](New-Item -ItemType Directory -Path $occupiedTarget)
+    $blockedName = 'preexisting-sentinel.txt'
+    if ($manifest.Files.ContainsKey($blockedName)) { throw "Occupied-directory sentinel collides with the release: $blockedName" }
+    $blockedSentinel = Assert-PlainPath (Join-Path $occupiedTarget $blockedName) -AllowMissing
+    $bytes = [Text.Encoding]::UTF8.GetBytes('Synthetic file in the occupied install target.')
+    $stream = [IO.File]::Open($blockedSentinel, 'CreateNew', 'Write', 'None')
+    try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+    $blockedHash = (Get-FileHash -LiteralPath $blockedSentinel -Algorithm SHA256).Hash
+    $blockedWriteUtc = [IO.Directory]::GetLastWriteTimeUtc($occupiedTarget)
+    $report.existingTargetSentinel = [ordered]@{ path = $blockedSentinel; beforeSha256 = $blockedHash }
+    $report.installExistingTarget = Invoke-QuietNsis $setup "/S /D=$occupiedTarget" 'install-existing.log'
+    if ($report.installExistingTarget.exitCode -ne 2) {
+        throw "Expected occupied-target exit 2, got $($report.installExistingTarget.exitCode)."
+    }
+    $entries = @(Get-ChildItem -LiteralPath (Assert-PlainPath $occupiedTarget) -Force)
+    if ($entries.Count -ne 1 -or $entries[0].Name -cne $blockedName -or $entries[0].PSIsContainer) {
+        throw "Occupied target contents changed: $occupiedTarget"
+    }
+    $report.existingTargetSentinel.afterSha256 = (Get-FileHash -LiteralPath (Assert-PlainPath $blockedSentinel) -Algorithm SHA256).Hash
+    if ($report.existingTargetSentinel.afterSha256 -cne $blockedHash -or
+        [IO.Directory]::GetLastWriteTimeUtc($occupiedTarget) -ne $blockedWriteUtc) {
+        throw "Occupied target or its sentinel changed: $occupiedTarget"
+    }
+    $report.existingTargetUnchanged = $true
+    Assert-AbsentFileSystemPath $link
+    Assert-NoUserRegistration
+    Assert-NoMachineRegistration
+    $report.existingTargetIntegrationUnchanged = $true
+
     $report.stage = 'silent install'
+    Assert-AbsentFileSystemPath $target
     $report.install = Invoke-QuietNsis $setup "/S /D=$target" 'install.log'
     if ($report.install.exitCode -ne 0) { throw "Silent install exit code: $($report.install.exitCode)" }
     $player = Join-Path $target 'LLPlayer.exe'
@@ -167,14 +216,16 @@ try {
     $uninstallCommand = '"' + $uninstaller + '"'
     $expected = [ordered]@{
         DisplayName = 'LLPlayer Original Review'; DisplayVersion = '0.3.0-polish.1'; DisplayIcon = "$player,0"
-        InstallLocation = $target; UninstallString = $uninstallCommand; QuietUninstallString = "$uninstallCommand /S"
+        InstallLocation = $target; UninstallString = $uninstallCommand
         StartMenuLink = $link; PayloadSHA256 = $manifest.Hash
         EstimatedSize = [int][Math]::Ceiling($manifest.Bytes / 1KB); NoModify = 1; NoRepair = 1
     }
     foreach ($name in $expected.Keys) {
         if ($null -eq $values -or $values[$name] -ine $expected[$name]) { throw "Unexpected uninstall registration value: $name" }
     }
+    if ($values.Contains('QuietUninstallString')) { throw 'Unexpected QuietUninstallString in the uninstall registration.' }
     $report.registeredValues = $values
+    $report.quietUninstallStringAbsent = $true
     Assert-NoMachineRegistration
     [void](Assert-PlainPath $link)
     if (-not ('PolishShellLinkReader' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'ShellLinkReader.cs') }
@@ -183,6 +234,11 @@ try {
     $report.shortcutTarget = $shortcutTarget
     $report.shortcutWorkingDirectory = $shortcutDirectory
     $report.shortcutArguments = $shortcutArguments
+    $expectedLinkHash = (Get-FileHash -LiteralPath $link -Algorithm SHA256).Hash
+    $expectedUninstallerHash = (Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
+    if ($values['StartMenuLinkSHA256'] -ine $expectedLinkHash -or $values['UninstallerSHA256'] -ine $expectedUninstallerHash) {
+        throw 'Registered link or uninstaller fingerprint does not match the installed file.'
+    }
     if ($shortcutTarget -ine $player -or $shortcutDirectory -ine $target -or $shortcutArguments -or
         -not [IO.File]::Exists($shortcutTarget)) {
         throw "Unexpected shortcut target, working directory or arguments: $link"
@@ -206,7 +262,27 @@ try {
         $sentinels[$relative] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
     }
 
-    $report.stage = 'silent uninstall'
+    # A same-length change must be retained too; a size-only ownership check must fail this test.
+    $replacementRelative = 'ECDICT-LICENSE.txt'
+    if (-not $manifest.Files.ContainsKey($replacementRelative)) { throw "Missing replacement test payload: $replacementRelative" }
+    $replacement = Assert-PlainPath (Join-Path $target $replacementRelative)
+    $replacementItem = $manifest.Files[$replacementRelative]
+    Assert-PayloadFile (Get-Item -LiteralPath $replacement) $replacementItem
+    $stream = [IO.File]::Open($replacement, 'Open', 'ReadWrite', 'None')
+    try {
+        $firstByte = $stream.ReadByte()
+        if ($firstByte -lt 0) { throw "Empty replacement test payload: $replacement" }
+        $stream.Position = 0
+        $stream.WriteByte([byte]($firstByte -bxor 1))
+    } finally { $stream.Dispose() }
+    $replacementHash = (Get-FileHash -LiteralPath $replacement -Algorithm SHA256).Hash
+    if ($replacementHash -ieq $replacementItem.sha256 -or (Get-Item -LiteralPath $replacement).Length -ne $replacementItem.bytes) {
+        throw "Expected a same-length change to the replacement payload: $replacement"
+    }
+    $sentinels[$replacementRelative] = $replacementHash
+    $report.replacedPayload = [ordered]@{ path = $replacementRelative; originalSha256 = $replacementItem.sha256; replacementSha256 = $replacementHash }
+
+    $report.stage = 'silent uninstall with a locked payload file'
     # Launch an isolated byte-identical copy so the installed uninstaller can be removed and its actual exit code captured.
     $uninstallProbe = Join-Path $run 'uninstall-probe.exe'
     [IO.File]::Copy($uninstaller, $uninstallProbe, $false)
@@ -214,12 +290,58 @@ try {
     if ((Get-FileHash -LiteralPath $uninstallProbe -Algorithm SHA256).Hash -cne $report.uninstallerSha256) {
         throw 'Uninstaller copy changed.'
     }
-    $report.uninstall = Invoke-QuietNsis $uninstallProbe "/S _?=$target" 'uninstall.log'
-    if ($report.uninstall.exitCode -ne 0) { throw "Silent uninstall exit code: $($report.uninstall.exitCode)" }
+    $uninstallArguments = "/S _?=$target"
+    $uninstallTimeoutSeconds = 600 # Allow time to hash the installed payload.
+    $lockedRelative = 'Assets\completion.mp3'
+    if (-not $manifest.Files.ContainsKey($lockedRelative)) { throw "Missing lock test payload: $lockedRelative" }
+    $lockedPath = Assert-PlainPath (Join-Path $target $lockedRelative)
+    $lockedItem = $manifest.Files[$lockedRelative]
+    Assert-PayloadFile (Get-Item -LiteralPath $lockedPath) $lockedItem
+    $shortcutHash = (Get-FileHash -LiteralPath (Assert-PlainPath $link) -Algorithm SHA256).Hash
+    $report.lockedPayload = [ordered]@{ path = $lockedRelative; originalSha256 = $lockedItem.sha256 }
+    # Permit the uninstaller to read and hash it, but not to delete it until this handle is closed.
+    $lock = [IO.File]::Open($lockedPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        $report.uninstallLocked = Invoke-QuietNsis $uninstallProbe $uninstallArguments 'uninstall-locked.log' -TimeoutSeconds $uninstallTimeoutSeconds
+        if ($report.uninstallLocked.exitCode -ne 3) { throw "Expected locked uninstall exit 3, got $($report.uninstallLocked.exitCode)." }
+        $report.lockedPayload.retainedSha256 = (Get-FileHash -LiteralPath (Assert-PlainPath $lockedPath) -Algorithm SHA256).Hash
+        if ($report.lockedPayload.retainedSha256 -ine $lockedItem.sha256) { throw "Locked payload changed: $lockedPath" }
+        $lockedValues = Read-Registration
+        if ($null -eq $lockedValues -or $lockedValues.Count -ne $values.Count) { throw 'Locked uninstall changed the uninstall registration.' }
+        foreach ($name in $values.Keys) {
+            if (-not $lockedValues.Contains($name) -or $lockedValues[$name] -cne $values[$name]) {
+                throw "Locked uninstall changed registration value: $name"
+            }
+        }
+        if ((Get-FileHash -LiteralPath (Assert-PlainPath $link) -Algorithm SHA256).Hash -cne $shortcutHash) {
+            throw "Locked uninstall changed the shortcut: $link"
+        }
+        if ((Get-FileHash -LiteralPath (Assert-PlainPath $uninstaller) -Algorithm SHA256).Hash -cne $report.uninstallerSha256) {
+            throw "Locked uninstall changed the installed uninstaller: $uninstaller"
+        }
+        $report.lockedUninstallIntegrationUnchanged = $true
+    } finally { $lock.Dispose() }
+
+    $report.stage = 'silent uninstall retry after unlocking'
+    if ($RegisteredUninstallEntry) {
+        # /S uses the registered launcher path (verified above), without NSIS's internal _?= bypass.
+        # A successful launcher exit is not the child's exit code. Assert physical cleanup separately.
+        $report.uninstallLauncher = Invoke-QuietNsis $uninstaller '/S' 'uninstall-registered-launcher.log' -TimeoutSeconds $uninstallTimeoutSeconds
+        if ($report.uninstallLauncher.exitCode -ne 0) { throw "Registered uninstall launcher exit code: $($report.uninstallLauncher.exitCode)" }
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        while ([IO.File]::Exists($uninstaller) -or [IO.File]::Exists($link) -or $null -ne (Read-Registration)) {
+            if ($timer.Elapsed.TotalSeconds -ge 90) { throw 'Registered uninstall launcher returned, but its child did not remove shell integration and the uninstall file.' }
+            Start-Sleep -Milliseconds 300
+        }
+        $report.uninstallLauncherWaitMs = $timer.ElapsedMilliseconds
+    } else {
+        $report.uninstall = Invoke-QuietNsis $uninstallProbe $uninstallArguments 'uninstall-retry.log' -TimeoutSeconds $uninstallTimeoutSeconds
+        if ($report.uninstall.exitCode -ne 0) { throw "Silent uninstall retry exit code: $($report.uninstall.exitCode)" }
+    }
     $report.stage = 'uninstall removal and user-file retention'
     Assert-AbsentFileSystemPath $link
     Assert-AbsentFileSystemPath $uninstaller
-    if ($null -ne (Read-Registration)) { throw "Uninstall registration was not removed: HKCU\$regPath" }
+    Assert-NoUserRegistration
     Assert-NoMachineRegistration
     $remaining = @(Get-PlainTree $target)
     if ($remaining.Count -ne $sentinels.Count) { throw "Unexpected post-uninstall file count: $($remaining.Count)" }

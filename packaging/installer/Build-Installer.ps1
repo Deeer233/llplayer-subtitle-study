@@ -51,31 +51,33 @@ $lines = [Collections.Generic.List[string]]::new()
 $lines.Add(('!define PAYLOAD_SHA256 "{0}"' -f $manifest.Hash))
 $lines.Add(('!define PAYLOAD_MAX_RELATIVE {0}' -f $manifest.Longest))
 $lines.Add(('!define PAYLOAD_KIB {0}' -f [long][Math]::Ceiling($manifest.Bytes / 1KB)))
-$lines.Add('!macro PayloadDirectories Prefix Failure')
-foreach ($dir in $dirs) { $lines.Add(('  !insertmacro CheckPayloadDirectory "${{Prefix}}" "{0}" "${{Failure}}"' -f $dir)) }
-$lines.Add('!macroend')
-$lines.Add('!macro PayloadAbsent')
-foreach ($rel in $files) { $lines.Add(('  !insertmacro RequireAbsent "$INSTDIR\{0}"' -f $rel)) }
+$lines.Add('!macro PayloadDirectories Prefix Base Failure')
+foreach ($dir in $dirs) { $lines.Add(('  !insertmacro CheckPayloadDirectory "${{Prefix}}" "${{Base}}\{0}" "${{Failure}}"' -f $dir)) }
 $lines.Add('!macroend')
 $lines.Add('!macro PayloadInstall')
 $last = $null
 foreach ($rel in $files) {
     $dir = [IO.Path]::GetDirectoryName($rel)
     if ($dir -cne $last) {
-        $outPath = if ($dir) { '$INSTDIR\' + $dir } else { '$INSTDIR' }
+        $outPath = if ($dir) { '$StageApp\' + $dir } else { '$StageApp' }
         $lines.Add(('  SetOutPath "{0}"' -f $outPath))
-        $lines.Add('  IfErrors install_failed')
+        $lines.Add('  IfErrors install_rollback')
         $last = $dir
     }
     $lines.Add(('  File "{0}"' -f (Join-Path $root $rel)))
-    $lines.Add('  IfErrors install_failed')
+    $lines.Add('  IfErrors install_rollback')
 }
 $lines.Add('!macroend')
-$lines.Add('!macro PayloadUninstall')
-foreach ($rel in $files) { $lines.Add(('  Delete "$INSTDIR\{0}"' -f $rel)) }
+$lines.Add('!macro PayloadCheck Prefix Base Failure')
+foreach ($rel in $files) {
+    $lines.Add(('  !insertmacro CheckPayloadFile "${{Prefix}}" "${{Base}}\{0}" "{1}" "${{Failure}}"' -f $rel, $manifest.Files[$rel].sha256))
+}
 $lines.Add('!macroend')
-$lines.Add('!macro PayloadRemoveEmptyDirectories')
-for ($i = $dirs.Length - 1; $i -ge 0; $i--) { $lines.Add(('  RMDir "$INSTDIR\{0}"' -f $dirs[$i])) }
+$lines.Add('!macro PayloadDiscardStage')
+foreach ($rel in $files) { $lines.Add(('  Delete "$StageApp\{0}"' -f $rel)) }
+$lines.Add('!macroend')
+$lines.Add('!macro PayloadRemoveEmptyDirectories Base')
+for ($i = $dirs.Length - 1; $i -ge 0; $i--) { $lines.Add(('  RMDir "${{Base}}\{0}"' -f $dirs[$i])) }
 $lines.Add('!macroend')
 [IO.File]::WriteAllLines($include, $lines, [Text.UTF8Encoding]::new($true))
 
@@ -100,6 +102,7 @@ $evidence = [ordered]@{
     installer = $exe.FullName
     installerBytes = $exe.Length
     installerSha256 = (Get-FileHash -LiteralPath $exe.FullName).Hash
+    nsisSourceSha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
     compileLog = $log
 }
 $receipt = Join-Path $build 'build.json'
