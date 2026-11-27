@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseAppHost>false</UseAppHost>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="FlyleafLib" HintPath="$(PolishPackageDir)/FlyleafLib.dll" Private="false" />
+    <Compile Include="Program.cs;Playback.cs;ReviewUi.cs;LibraryChecks.cs;FakeAnki.cs" />
+  </ItemGroup>
+</Project>
