@@ -1,0 +1,37 @@
+name: Node regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  node-tests:
+    name: Node 24 / Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install media and TLS tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg openssl
+      - name: Run self-contained regressions
+        run: >-
+          node --test
+          cloud/checks/server.test.mjs
+          cloud/checks/https.test.mjs
+          pilot/feasibility.test.mjs
+          pilot/review-study-translation.test.mjs
+          pilot/study-audit-form.test.mjs

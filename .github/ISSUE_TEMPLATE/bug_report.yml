@@ -1,0 +1,41 @@
+name: 缺陷报告
+description: 报告字幕、原声词卡、复习、Anki 或安装的问题
+title: '[缺陷] '
+body:
+  - type: markdown
+    attributes:
+      value: '请使用合成素材并脱敏。不要附影视原片、实录词库、账号、配对码、令牌或带签名的链接。涉及安全问题请参阅 SECURITY.md。'
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - 播放器、字幕或原声词卡
+        - Anki 或手机同步
+        - 独立 Windows 复习
+        - 私人复习站
+        - 打包或安装
+        - 文档或其他
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 版本和环境
+      description: '填写提交号或候选包版本、系统版本；如适用，注明 Anki 或 Node 版本。'
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 最小复现步骤
+      description: '说明从哪个界面或命令开始，以及你做了什么。'
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 预期结果与实际结果
+      description: '可附脱敏日志、退出码或截图。'
+    validations:
+      required: true

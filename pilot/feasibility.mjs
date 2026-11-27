@@ -12,14 +12,14 @@ const commands = {
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (!command || command === '--help') {
-    console.log('Usage: node pilot/feasibility.mjs <scan|timeline|translate> <file> [options]\nSee pilot/README.md.');
+    console.log('Usage: node pilot/feasibility.mjs <scan|timeline|translate> <file> [options]\nSee docs/DEVELOPMENT.md.');
     return;
   }
   if (!Object.hasOwn(commands, command)) throw new Error(`Unknown command: ${command}`);
   const { opts, run } = commands[command];
   const options = Object.fromEntries(Object.entries(opts).map(([name, type]) => [name, { type }]));
   const { positionals, values } = parseArgs({ args, options, allowPositionals: true });
-  if (positionals.length !== 1 || (command === 'timeline' && !values.anchors)) throw new Error('Invalid arguments; see pilot/README.md');
+  if (positionals.length !== 1 || (command === 'timeline' && !values.anchors)) throw new Error('Invalid arguments; see docs/DEVELOPMENT.md');
   const result = await run(positionals[0], values);
   console.log(JSON.stringify(result, null, 2));
   if (result.passed === false || result.status === 'incomplete') process.exitCode = 2;
