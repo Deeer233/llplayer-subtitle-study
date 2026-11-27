@@ -8,12 +8,12 @@
 
 | 文件 | 用途 | SHA-256 |
 |---|---|---|
-| `Setup.exe` | NSIS 每用户安装。不要求提升为管理员，不自动启动播放器。 | `ce9e7c36771c64b7681e3105d6a8d4ce7e651f9153b5c1a6e722d98787cfcd04` |
+| `Setup.exe` | NSIS 每用户安装。不要求提升为管理员，不自动启动播放器。 | `543019cd717479688eb0cc04fe7f6655261986425dd6556cc5e136afe1dd63ff` |
 | `LLPlayer-Anki-0.3.0-polish.1-win-x64.zip` | 免安装版。完整解压到新目录，再打开其中的 `LLPlayer.exe`。 | `2beedf23c48e9403f716a822822432193c6db9f5fec728f3e1d2634c2e0c3e1d` |
 | `payload-manifest.json` | 同一干净文件树 972 个应用文件的相对路径、长度和摘要。NSIS 卸载器为安装版附加项，不在 ZIP 内。 | `557137312a4af704083b6c5850b89ab047ae436e7686a13aa77681c8055e79ee` |
 | `SHA256SUMS.txt` | 上列三个完整文件的校验清单。 | — |
 
-默认安装目录为 `%LOCALAPPDATA%\Programs\LLPlayer-Anki-Polish-144e1786`；Windows「已安装的应用」显示 `LLPlayer Original Review`。如果需要回退，正常关闭新版，通过该卸载项移除安装版，再打开原交付包。不要覆盖旧包；不要清理 `%LOCALAPPDATA%\LLPlayer\PrivateReview`。程序设置仍在各自程序目录，卸载不移除未列入清单的文件。
+默认安装目录为 `%LOCALAPPDATA%\LLPlayer-Anki-Polish-144e1786`。如果目标已存在，请选同盘上级目录已存在的全新路径，不要覆盖旧包。Windows「已安装的应用」显示 `LLPlayer Original Review`。回退时先正常关闭新版，从该卸载项卸载，再打开原交付包。卸载只移除路径和 SHA-256 均匹配的程序文件；保留程序目录内的设置、清单外文件及同名但内容不同的文件。词本仍在 `%LOCALAPPDATA%\LLPlayer\PrivateReview`，不做迁移。
 
 ## 实测证据
 
@@ -22,10 +22,11 @@
 | 相同探针：旧包 7/8 | `C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-regression-e956a620c7fb\report.md`。旧包部分字段改动不锁定试听。 |
 | 相同探针：新版 8/8 | `C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-regression-0df32e5daca3\report.md`。实际包 `LLPlayer.dll` SHA-256 `d8f448ec739ae9202d05ee989cf83c6a16a13735c7c2d98760b46de606e384b4`。试听实测从 0.117 秒推进到 0.226 秒（总长 1.123 秒）；取消清理临时音频，词库字节不变。 |
 | 离屏专项：8/8 | `C:\Users\Deeer\Desktop\美剧字幕翻译\packaging\ui-checks\.pilot\ui-qa-20261127-131941-48c19c4ea6dd\report.json`。450 × 430 DIP、200%／235%、四态、写前取消、损坏偏好回退及显式选卡优先；同目录有四张 PNG。 |
-| 每用户静默安装和卸载：通过 | `C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-install-check-144e1786-2e13db4c\report.json`。未提权账户，实际安装和卸载均返回 0；972 个文件与 ZIP 路径、长度和 SHA-256 一致。读取中文路径快捷方式，目标及工作目录正确，未观察到自动启动。卸载移除本批次程序、快捷方式及 HKCU 卸载项，未发现对应 HKLM 项。合成词本、设置及一份清单外文件逐字节保留。两个退出码及用时另见同目录的 `install.log` 与 `uninstall.log`。 |
+| 每用户静默安装和卸载：通过 | `C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-install-check-144e1786-v2-bc7edb11\report.json`。未提权账户，正常装卸退出码均为 0。972 个文件与 ZIP 的路径、长度和 SHA-256 一致。中文快捷方式的目标、工作目录正确，未观察到自动启动。注册和卸载范围均限当前用户。已有目标返回 2，哨兵及目录不变；文件被锁返回 3，保留快捷方式与卸载项，解锁后重试成功。 |
+| 注册的卸载入口：通过 | `C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-install-check-144e1786-reg-bc7edb11\report.json`。用已注册的 `Uninstall.exe` 路径加 `/S`，独立等到卸载子进程完成，而非只看启动器退出码。两次运行均移除程序、快捷方式和 HKCU 卸载项，未发现对应 HKLM 项。4 个合成文件逐个验 SHA-256：词本、设置、程序子目录中的清单外文件、清单内同名且等长的改写文件。 |
 | 冻结和旧入口：通过 | `C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-freeze-20261127-124604-ecae8750\source.zip`，SHA-256 `8aa81a38dd468d975bc4cf3ad0c89b736fe28a42680bbd1da63db66ca98b1786`。复核 316 项冻结文件与当前工作字节一致，其中上游 307 项。仅隔离副本改两个 WPF 调用点并注入五个 UI 文件；无注入旧入口编译通过。 |
 
-回归用合成媒体、临时词库、静音 WPF 播放和模拟 Anki。未验真实桌面播放器交互、文件选择框、实际扬声器、物理显示器 DPI 切换、安装图形向导、真实 Anki、手机或干净机器。快捷方式只读取，不点击。安装验收用显式隔离路径，卸载用实际生成卸载器的字节一致副本（NSIS `_?=` 隔离调用）。
+回归用合成媒体、临时词库、静音 WPF 播放和模拟 Anki。未验真实桌面播放器交互、文件选择框、实际扬声器、物理显示器 DPI 切换、安装图形向导、真实 Anki、手机或干净机器。快捷方式只读取，不点击。安装验收用显式隔离路径。用实际卸载器的字节一致副本（NSIS `_?=`）取得真实卸载退出码，另测注册入口的静默子进程及最终文件状态。未覆盖全部卷、ACL、磁盘写满或开始菜单重定向组合。
 
 ## 本机离线复核
 
@@ -42,7 +43,7 @@ $delivery = "$root\交付\LLPlayer-Anki-0.3.0-polish.1-20261127-125305-144e1786"
 & "$root\packaging\ui-checks\Invoke-OffscreenUiQa.ps1" -Package "$build\payload"
 & "$root\packaging\installer\Test-Installer.ps1" -VerifyArtifactsOnly `
   -InstallerPath "$delivery\Setup.exe" `
-  -InstallerSha256 'ce9e7c36771c64b7681e3105d6a8d4ce7e651f9153b5c1a6e722d98787cfcd04' `
+  -InstallerSha256 '543019cd717479688eb0cc04fe7f6655261986425dd6556cc5e136afe1dd63ff' `
   -ZipPath "$delivery\LLPlayer-Anki-0.3.0-polish.1-win-x64.zip" `
   -ManifestPath "$delivery\payload-manifest.json"
 ```
