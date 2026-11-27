@@ -73,6 +73,60 @@ public static class StudyLogicChecks
             "previous and next Chinese cues do not replace the translation");
         Check(line.MatchChinese([Cue(300, 4500, reference)]) is null, "Chinese spanning multiple lines is not silently substituted");
 
+        const string wipe = "I said I need you to do some wipe downs.";
+        const string wipeChinese = "我叫你到外面去擦车";
+        StudyCue[] carWashCues = [Cue(1255921, 1257006, "-Come on.\n-What?"), Cue(1257173, 1259216, wipe),
+            Cue(1259383, 1261761, "Are you here to work, or to stare at the skies?")];
+        var combined = Cue(1256588, 1259491, "-什么？\r\n-" + wipeChinese);
+        var wipeLine = StudyDialogue.Build(carWashCues, 1);
+        Check(wipeLine.MatchChinese([combined]) == wipeChinese, "merged Chinese supplies only its second turn to the following English line");
+        Check(StudyDialogue.Build(carWashCues, 0).MatchChinese([combined]) is null
+            && StudyDialogue.Build(carWashCues, 2).MatchChinese([combined]) is null,
+            "merged Chinese is not shown on either nearby English cue with only edge overlap");
+        Check(wipeLine.MatchChinese([combined with { Text = "什么？\n" + wipeChinese }]) is null
+            && wipeLine.MatchChinese([combined with { Text = "-什么？\n-" + wipeChinese + "\n-还有一句" }]) is null
+            && StudyDialogue.Build([carWashCues[1]], 0).MatchChinese([combined]) is null,
+            "merged fallback needs exactly two explicit turns and an adjacent English cue");
+        Check(wipeLine.MatchChinese([combined, Cue(1257173, 1259216, "单独一条的译文")]) == "单独一条的译文",
+            "a direct Chinese match has priority over a split fallback");
+        Check(wipeLine.MatchChinese([combined with { Start = TimeSpan.FromMilliseconds(1256750) }]) == wipeChinese,
+            "a marked cue within the old timing cutoff still excludes the other speaker");
+        Check(wipeLine.MatchChinese([combined, combined with { Text = "-什么？\n-另一个候选" }]) is null,
+            "multiple possible split translations are not guessed");
+        var beforeNext = Cue(1257173, 1260110, "-" + wipeChinese + "\n-你是来工作的吗？");
+        Check(wipeLine.MatchChinese([beforeNext]) == wipeChinese && StudyDialogue.Build(carWashCues, 2).MatchChinese([beforeNext]) is null,
+            "a merged cue that ends in the next English line supplies only its first turn");
+        Check(wipeLine.MatchChinese([combined with { End = beforeNext.End }]) is null,
+            "a marked cue substantially overlapping both neighboring lines is not split");
+        var sameCueExchange = Cue(1256750, 1259216, "-你好。\n-你好啊。");
+        var twoSpeakerEnglish = StudyDialogue.Build([carWashCues[0], carWashCues[1] with { Text = "-Hello.\n-Hi there." }, carWashCues[2]], 1);
+        Check(twoSpeakerEnglish.MatchChinese([sameCueExchange]) == sameCueExchange.Text,
+            "two speakers in the same English cue still receive both Chinese lines");
+
+        const string pictureChinese = "我万万没有想到";
+        StudyCue[] pictureCues = [Cue(1000, 2000, "But methamphetamine?"), Cue(3200, 5400, "I didn’t picture that."),
+            Cue(5550, 6800, "There's a lot of money in it, huh?")];
+        var pictureLine = StudyDialogue.Build(pictureCues, 1);
+        var early = Cue(2065, 4750, pictureChinese);
+        Check(pictureLine.MatchChinese([early]) == pictureChinese,
+            "an early isolated Chinese cue with strong overlap matches the current line");
+        Check(pictureLine.MatchChinese([early, Cue(3200, 5400, "常规译文")]) == "常规译文",
+            "a normal match takes priority over the early fallback");
+        Check(pictureLine.MatchChinese([early, early with { Text = "另一条提前的字幕" }]) is null,
+            "two plausible early candidates are not guessed");
+        Check(StudyDialogue.Build([pictureCues[0] with { End = TimeSpan.FromMilliseconds(2075) }, pictureCues[1], pictureCues[2]], 1)
+                .MatchChinese([early]) is null
+            && pictureLine.MatchChinese([early with { End = TimeSpan.FromMilliseconds(5600) }]) is null,
+            "even partial overlap with either neighbor rules out an early candidate");
+        Check(pictureLine.MatchChinese([Cue(2600, 3840, pictureChinese)]) is null
+            && StudyDialogue.Build([pictureCues[0] with { End = TimeSpan.FromMilliseconds(1600) }, pictureCues[1], pictureCues[2]], 1)
+                .MatchChinese([Cue(1750, 5200, pictureChinese)]) is null
+            && pictureLine.MatchChinese([early with { Text = "-没料到\n-很吃惊" }]) is null,
+            "weak overlap, excessive lead, and multiple speakers do not use the early fallback");
+        Check(StudyDialogue.Build(pictureCues, 0).MatchChinese([early]) is null
+            && StudyDialogue.Build(pictureCues, 2).MatchChinese([early]) is null,
+            "an isolated early subtitle does not leak onto either adjacent English line");
+
         static string Reply(string expression, bool certain) => JsonSerializer.Serialize(new
         {
             zh = reference, expression, lemma = "bail on", sense = "\u653e\u9e3d\u5b50", certain
@@ -173,6 +227,20 @@ public static class StudyLogicChecks
             if (line.MatchChinese(chinese) is not null) matched++;
         }
         Check(matched > 0, "real episode yields time-matched Chinese");
+        CheckEpisodeLine(1257173, "I said I need you to do some wipe downs.", "我叫你到外面去擦车",
+            "real episode 20:57 gets Simplified Chinese without the previous speaker");
+        CheckEpisodeLine(1692858, "I didn't picture that.", "我万万没有想到",
+            "real episode 28:12 gets the isolated Simplified Chinese cue that starts 1135 ms early");
+
+        void CheckEpisodeLine(int startMs, string spoken, string translation, string label)
+        {
+            var index = Array.FindIndex(english, cue => (cue.Start - TimeSpan.FromMilliseconds(startMs)).Duration() <= TimeSpan.FromMilliseconds(2)
+                && StudyDialogue.Normalize(cue.Text).Replace('\u2019', '\'') == spoken);
+            if (index < 0) return; // Other episodes may be passed to the same check.
+            var line = StudyDialogue.Build(english, index);
+            var nearby = chinese.Where(cue => cue.Start >= line.Start - StudyDialogue.ChineseSearchLead && cue.Start < line.End).ToArray();
+            Check(line.MatchChinese(nearby) == translation, label);
+        }
         Console.WriteLine($"Tracks: EN={english.Length}, ZH={chinese.Length}; matched EN cues={matched}/{english.Length} (timing heuristic only)");
     }
 

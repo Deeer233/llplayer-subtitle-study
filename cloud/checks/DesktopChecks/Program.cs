@@ -2,6 +2,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.Json;
 using LLPlayer.Services;
 
@@ -40,7 +41,24 @@ if (args is ["anki-window", var package, var tempRoot])
     var thread=new Thread(()=>{
         try
         {
-            var assembly=Assembly.LoadFrom(Path.GetFullPath(package));
+            var packagePath=Path.GetFullPath(package);
+            var resolver=new AssemblyDependencyResolver(packagePath);
+            AssemblyLoadContext.Default.Resolving += (context,name) => resolver.ResolveAssemblyToPath(name) is { } dependency
+                ? context.LoadFromAssemblyPath(dependency) : null;
+            var assembly=Assembly.LoadFrom(packagePath);
+            // Load the same implicit Dark theme as the real window, without running startup or showing UI.
+            var app=new System.Windows.Application();
+            _=Assembly.Load("MaterialDesignThemes.Wpf");
+            app.Resources=(System.Windows.ResourceDictionary)System.Windows.Markup.XamlReader.Parse("""
+                <ResourceDictionary xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
+                    xmlns:materialDesign='http://materialdesigninxaml.net/winfx/xaml/themes'>
+                    <ResourceDictionary.MergedDictionaries>
+                        <materialDesign:CustomColorTheme BaseTheme='Dark' PrimaryColor='#D23D6F' SecondaryColor='#00B8D4'/>
+                        <ResourceDictionary Source='pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign2.Defaults.xaml'/>
+                        <ResourceDictionary Source='pack://application:,,,/LLPlayer;component/Resources/MaterialDesignMy.xaml'/>
+                    </ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary>
+                """);
             var cloudType=assembly.GetType("LLPlayer.Services.StudyCloud",true)!;
             var flags=BindingFlags.Instance|BindingFlags.NonPublic;
             if (cloudType.GetField("AnkiBuild",BindingFlags.Static|BindingFlags.NonPublic)?.GetRawConstantValue() is not true)
@@ -64,14 +82,60 @@ if (args is ["anki-window", var package, var tempRoot])
                 throw new InvalidOperationException("The main button must require completed audio preview");
             var export=(System.Windows.Controls.Button)windowType.GetField("_export",flags)!.GetValue(window)!;
             if (export.IsEnabled) throw new InvalidOperationException("Empty selection can be exported");
+            var rows=(System.Windows.Controls.ListBox)windowType.GetField("_rows",flags)!.GetValue(window)!;
+            var editor=(System.Windows.Controls.StackPanel)windowType.GetField("_reviewEditor",flags)!.GetValue(window)!;
+            var empty=(System.Windows.Controls.TextBlock)windowType.GetField("_reviewEmpty",flags)!.GetValue(window)!;
+            if (rows.Visibility!=System.Windows.Visibility.Collapsed || editor.Visibility!=System.Windows.Visibility.Collapsed
+                || empty.Visibility!=System.Windows.Visibility.Visible || !empty.Text.Contains("点一个英文词"))
+                throw new InvalidOperationException("Empty review must show an instruction, not a blank list and editor");
+            var clip=Activator.CreateInstance(assembly.GetType("LLPlayer.Services.ClipSource",true)!,["fixture.mkv",1L,1L,0,0.1,1.0]);
+            const string sentence="I'm sorry. I just need to make sure you fully understand.";
+            var lookup=cloudType.GetMethod("Observe",flags)!.Invoke(cloud,[clip,sentence,"need","","Fixture"]);
+            windowType.GetMethod("Select",flags)!.Invoke(window,[lookup]);
+            var content=(System.Windows.FrameworkElement)((System.Windows.Window)window!).Content;
+            content.Measure(new System.Windows.Size(450,400));
+            content.Arrange(new System.Windows.Rect(0,0,450,400));
+            content.UpdateLayout();
+            if (editor.Visibility!=System.Windows.Visibility.Visible || empty.Visibility!=System.Windows.Visibility.Collapsed
+                || rows.ActualHeight<=0 || rows.ActualHeight>=65)
+                throw new InvalidOperationException($"One dialogue must fit in one compact row; actual list height {rows.ActualHeight}");
+            var row=(System.Windows.Controls.ListBoxItem)rows.ItemContainerGenerator.ContainerFromIndex(0);
+            var rowText=(System.Windows.Controls.TextBlock)row.Template.FindName("RowText",row);
+            var rowSurface=(System.Windows.Controls.Border)row.Template.FindName("Row",row);
+            if (!row.IsSelected || !rowText.Text.Contains("need") || rowText.ActualWidth<=0)
+                throw new InvalidOperationException("Selected dialogue is not rendered");
+            CheckContrast(rowText.Foreground,rowSurface.Background,"selected dialogue");
+            System.Windows.Controls.TextBox Box(string name) => (System.Windows.Controls.TextBox)windowType.GetField(name,flags)!.GetValue(window)!;
+            var expression=Box("_expression"); var meaning=Box("_meaning"); var english=Box("_english");
+            if (expression.Text!="need" || english.Text!=sentence || meaning.Text!="" || meaning.IsReadOnly
+                || meaning.ActualWidth<=expression.ActualWidth || meaning.BorderThickness.Left<2
+                || !System.Windows.Automation.AutomationProperties.GetName(meaning).Contains("填写本句义（必填）")
+                || !System.Windows.Automation.AutomationProperties.GetName(english).Contains("英文原句"))
+                throw new InvalidOperationException("The selected expression, editable meaning and source sentence must stay distinguishable");
+            CheckContrast(expression.Foreground,expression.Background,"expression field");
+            CheckContrast(meaning.Foreground,meaning.Background,"meaning field");
+            CheckContrast(english.Foreground,english.Background,"English sentence field");
+            content.Measure(new System.Windows.Size(600,440));
+            content.Arrange(new System.Windows.Rect(0,0,600,440));
+            content.UpdateLayout();
+            var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap(600,440,96,96,System.Windows.Media.PixelFormats.Pbgra32);
+            bitmap.Render(content);
+            var preview=new System.Windows.Media.Imaging.PngBitmapEncoder();
+            preview.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+            var imagePath=Path.Combine(tempRoot,"review-layout.png");
+            using (var image=File.Open(imagePath,FileMode.CreateNew)) preview.Save(image);
+            Console.WriteLine($"Off-screen preview: {imagePath}");
+            meaning.Text="需要";
+            if (confirm.IsEnabled) throw new InvalidOperationException("Typing a meaning must not bypass completed audio preview");
             ((System.Windows.Window)window!).Close();
         }
         catch (Exception e) { failure=e; }
+        finally { System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown(); }
     });
     thread.SetApartmentState(ApartmentState.STA);
     thread.Start(); thread.Join();
     if (failure is not null) throw new InvalidOperationException("Anki WPF window check failed",failure);
-    Console.WriteLine("PASS simplified WPF flow, normal/selected label contrast, preview and selection gates");
+    Console.WriteLine("PASS off-screen WPF review: compact selected row, guided empty state, editable meaning and preview gate");
     return;
 }
 
@@ -115,13 +179,20 @@ static void CheckTabContrast(System.Windows.Controls.TabItem item, bool selected
     // IsVisible is false by design without a displayed Window. Check the element's own layout instead.
     if (!Equals(header.Text,item.Header) || header.Visibility!=System.Windows.Visibility.Visible || header.ActualWidth<=0)
         throw new InvalidOperationException($"Tab did not lay out its text: {item.Header}, value '{header.Text}', width {header.ActualWidth}, visibility {header.Visibility}");
+    CheckContrast(text,background,$"{item.Header} ({(selected ? "selected" : "normal")})");
+}
+
+static void CheckContrast(System.Windows.Media.Brush foreground,System.Windows.Media.Brush backdrop,string label)
+{
+    if (foreground is not System.Windows.Media.SolidColorBrush text || backdrop is not System.Windows.Media.SolidColorBrush background)
+        throw new InvalidOperationException($"Missing contrast brushes for {label}");
     static double Linear(byte channel) => channel<=10 ? channel/255.0/12.92 : Math.Pow((channel/255.0+.055)/1.055,2.4);
     static double Luminance(System.Windows.Media.Color c) => .2126*Linear(c.R)+.7152*Linear(c.G)+.0722*Linear(c.B);
     double a=Luminance(text.Color), b=Luminance(background.Color);
     var ratio=(Math.Max(a,b)+.05)/(Math.Min(a,b)+.05);
     if (ratio<4.5)
-        throw new InvalidOperationException($"Insufficient contrast for {item.Header} ({(selected ? "selected" : "normal")}): {text.Color} against {background.Color}");
-    Console.WriteLine($"PASS {item.Header} {(selected ? "selected" : "normal")}, contrast {ratio:F2}:1");
+        throw new InvalidOperationException($"Insufficient contrast for {label}: {text.Color} against {background.Color}");
+    Console.WriteLine($"PASS {label}, contrast {ratio:F2}:1");
 }
 
 var input=JsonSerializer.Deserialize<Input>(Console.In.ReadToEnd(),new JsonSerializerOptions(JsonSerializerDefaults.Web))!;

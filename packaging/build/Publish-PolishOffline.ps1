@@ -6,6 +6,8 @@ param(
     [string]$Snapshot,
     [Parameter(ParameterSetName = 'Build')]
     [switch]$NoInject,
+    [Parameter(ParameterSetName = 'Build')]
+    [string]$ClipFfmpeg,
     [Parameter(Mandatory, ParameterSetName = 'Verify')]
     [string]$VerifyPayload
 )
@@ -129,7 +131,10 @@ Get-PolishTreeFiles $feed -CheckOnly
 $cliHash = '3256173f3f8bffd7df12227c68adf68025edb1832273a9530688a7bb1ed8edec'
 if (!$NoInject) {
     $deliveryDir = [string][char]0x4ea4 + [char]0x4ed8
-    $clip = Assert-PolishPlainPath (Join-PolishPath $script:PolishRoot "$deliveryDir/LLPlayer-Anki-20261126/ClipTools/ffmpeg.exe")
+    if (!$ClipFfmpeg) {
+        $ClipFfmpeg = Join-PolishPath $script:PolishRoot "$deliveryDir/LLPlayer-Anki-20261127-中文字幕错时补配版/ClipTools/ffmpeg.exe"
+    }
+    $clip = Assert-PolishPlainPath $ClipFfmpeg
     if ((Get-PolishFileHash $clip) -cne $cliHash) { throw "Unapproved ClipTools ffmpeg.exe: $clip" }
     $dictionary = Assert-PolishPlainPath (Join-PolishPath $script:PolishRoot '.pilot/StudyDictionary.zip')
     $license = Assert-PolishPlainPath (Join-PolishPath $script:PolishRoot '.pilot/ecdict-full/LICENSE')

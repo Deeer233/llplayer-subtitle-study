@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation;
+using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -22,6 +24,8 @@ internal sealed class CloudReviewWindow : Window
         _source=new(), _from=new(), _to=new();
     private readonly PasswordBox _pairCode=new();
     private readonly ListBox _rows=new() {Height=134};
+    private readonly StackPanel _reviewEditor=new();
+    private readonly TextBlock _reviewEmpty=ReviewHint("还没有对白。播放时点一个英文词，在词卡里打开核对窗口。");
     private readonly CheckBox _manual=new() {Content="手动加入：一条已核对对白即可入本"},
         _keep=new() {Content="本句义只是改写，保留原卡和复习进度"},
         _newSense=new() {Content="改归其他义项，不更新原 Anki 卡"};
@@ -66,7 +70,7 @@ internal sealed class CloudReviewWindow : Window
     private CloudReviewWindow(StudyCloud cloud,Guid? select)
     {
         _cloud=cloud;
-        Title="私人词本"; Width=640; Height=730; MinWidth=450; MinHeight=430; WindowStartupLocation=WindowStartupLocation.CenterOwner;
+        Title="私人词本"; Width=640; Height=cloud.LocalOnly ? 510 : 730; MinWidth=450; MinHeight=430; WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var root=new DockPanel {Margin=new Thickness(13)};
         _status.Margin=new Thickness(0,0,0,8); _status.TextWrapping=TextWrapping.Wrap;
         _feedback.Margin=new Thickness(0,8,0,0);
@@ -74,41 +78,83 @@ internal sealed class CloudReviewWindow : Window
         DockPanel.SetDock(_feedback,Dock.Bottom); root.Children.Add(_feedback);
         root.Children.Add(_tabs); Content=root;
 
-        var list=new StackPanel {Margin=new Thickness(8)};
+        var list=new StackPanel {Margin=new Thickness(cloud.LocalOnly ? 12 : 8)};
+        var form=list;
         if (cloud.LocalOnly)
         {
             _reviewTab.Header="核对原声";
             _verify.Content="确认并加入 Anki";
-            list.Children.Add(Hint("点词后选一条对白，填写本句义，听完就可加入 Anki。不必导出文件。"));
+            list.Children.Add(ReviewText("1  选择要核对的对白", bold:true));
+            ConfigureReviewRows(_rows);
+            list.Children.Add(_rows);
+            list.Children.Add(_reviewEmpty);
+            list.Children.Add(_reviewEditor);
+            form=_reviewEditor;
+
+            var fields=new Grid();
+            fields.ColumnDefinitions.Add(new() {Width=new GridLength(1,GridUnitType.Star)});
+            fields.ColumnDefinitions.Add(new() {Width=new GridLength(2,GridUnitType.Star)});
+            var expression=new StackPanel {Margin=new Thickness(0,0,10,0)};
+            var meaning=new StackPanel();
+            ReviewField(expression,"单词 / 短语",_expression);
+            _expression.FontWeight=FontWeights.SemiBold;
+            ReviewField(meaning,"2  填写本句义（必填）",_meaning,primary:true);
+            Grid.SetColumn(meaning,1);
+            fields.Children.Add(expression); fields.Children.Add(meaning);
+            form.Children.Add(fields);
+            form.Children.Add(ReviewHint("写这个词在这句里的意思，例如：need → 需要。"));
+            ReviewField(form,"英文原句",_english,wrap:true);
         }
-        list.Children.Add(_rows);
-        Field(list,"表达",_expression); Field(list,"本句义",_meaning); Field(list,"英文原句",_english);
+        else
+        {
+            list.Children.Add(_rows);
+            Field(list,"表达",_expression); Field(list,"本句义",_meaning); Field(list,"英文原句",_english);
+        }
         var details=cloud.LocalOnly ? new StackPanel {Margin=new Thickness(8,0,0,0)} : list;
-        Field(details,"目标词形（原句里实际读出的词）",_target);
-        Field(details,cloud.LocalOnly ? "整句中文（可空，仅保存在本机）" : "整句中文（可空）",_chinese);
-        Field(details,"简要出处（不填路径）",_source);
+        void AddField(Panel panel,string title,TextBox box)
+        { if (cloud.LocalOnly) ReviewField(panel,title,box); else Field(panel,title,box); }
+        AddField(details,"目标词形（原句里实际读出的词）",_target);
+        AddField(details,cloud.LocalOnly ? "整句中文（可空，仅保存在本机）" : "整句中文（可空）",_chinese);
+        AddField(details,"简要出处（不填路径）",_source);
         var range = new Grid();
         range.ColumnDefinitions.Add(new()); range.ColumnDefinitions.Add(new());
         var begin = new StackPanel {Margin=new Thickness(0,0,8,0)};
         var end = new StackPanel();
-        Field(begin,"起点（秒）",_from); Field(end,"终点（秒）",_to);
+        AddField(begin,"起点（秒）",_from); AddField(end,"终点（秒）",_to);
         Grid.SetColumn(end,1); range.Children.Add(begin); range.Children.Add(end); details.Children.Add(range);
         if (!cloud.LocalOnly) { list.Children.Add(_manual); list.Children.Add(_keep); }
-        var controls=new WrapPanel {Margin=new Thickness(0,10,0,0)};
-        foreach (var button in new[]{_previewButton,_replay,_verify}) { StyleButton(button); controls.Children.Add(button); }
+        if (cloud.LocalOnly) form.Children.Add(ReviewHint("3  截取并试听。听完后，再确认加入 Anki。"));
+        var controls=new WrapPanel {Margin=new Thickness(0,cloud.LocalOnly ? 0 : 10,0,0)};
+        foreach (var button in new[]{_previewButton,_replay,_verify})
+        {
+            StyleButton(button);
+            if (cloud.LocalOnly)
+            {
+                button.Style=null;
+                button.Foreground=ReviewInk;
+                button.Background=button==_verify ? ReviewBrush(220,235,250) : Brushes.White;
+                button.BorderBrush=button==_verify ? ReviewAccent : ReviewEdge;
+                button.MinHeight=32;
+            }
+            controls.Children.Add(button);
+        }
         StyleButton(_withdraw);
         if (!cloud.LocalOnly) controls.Children.Add(_withdraw);
-        list.Children.Add(controls);
+        form.Children.Add(controls);
         if (cloud.LocalOnly)
         {
             details.Children.Add(_newSense);
-            details.Children.Add(Hint("按两句规则：两条不同对白确认同一义项后，程序才加入 Anki。"));
+            details.Children.Add(ReviewHint("按两句规则：两条不同对白确认同一义项后，程序才加入 Anki。"));
             var extra=new WrapPanel();
             StyleButton(_saveForPair); extra.Children.Add(_saveForPair); extra.Children.Add(_withdraw);
             details.Children.Add(extra);
-            list.Children.Add(new Expander {Header="调整原声与更多操作",Content=details,Margin=new Thickness(0,9,0,0)});
+            form.Children.Add(new Expander {Header=ReviewText("调整原声与更多操作",bold:true),Content=details,
+                Margin=new Thickness(0,7,0,0),Style=null,Foreground=ReviewInk});
         }
-        _reviewTab.Content=new ScrollViewer {Content=list,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
+        var scroll=new ScrollViewer {Content=list,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,HorizontalContentAlignment=HorizontalAlignment.Stretch};
+        if (cloud.LocalOnly) _tabs.HorizontalContentAlignment=HorizontalAlignment.Stretch;
+        _reviewTab.Content=cloud.LocalOnly ? new Border {Background=ReviewPaper,Child=scroll} : scroll;
         _tabs.Items.Add(_reviewTab);
 
         var setup=new StackPanel {Margin=new Thickness(8)};
@@ -181,6 +227,98 @@ internal sealed class CloudReviewWindow : Window
 
     internal void Select(Guid id) { if (!_busy) { _tabs.SelectedItem=_reviewTab; Rebind(id); } }
     private static TextBlock Hint(string text) => new() {Text=text,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,4,0,6)};
+
+    private static readonly Brush ReviewPaper=ReviewBrush(246,248,252), ReviewInk=ReviewBrush(26,40,59),
+        ReviewMuted=ReviewBrush(69,88,111), ReviewEdge=ReviewBrush(120,139,161), ReviewAccent=ReviewBrush(38,95,156);
+
+    private static Brush ReviewBrush(byte r,byte g,byte b)
+    {
+        var brush=new SolidColorBrush(Color.FromRgb(r,g,b));
+        brush.Freeze();
+        return brush;
+    }
+
+    private static TextBlock ReviewText(string text,bool bold=false) => new()
+    {
+        Text=text,Style=null,Foreground=ReviewInk,TextWrapping=TextWrapping.Wrap,
+        FontWeight=bold ? FontWeights.SemiBold : FontWeights.Normal
+    };
+
+    private static TextBlock ReviewHint(string text)
+    {
+        var hint=ReviewText(text);
+        hint.Foreground=ReviewMuted;
+        hint.Margin=new Thickness(0,4,0,6);
+        return hint;
+    }
+
+    private static void ReviewField(Panel panel,string title,TextBox box,bool primary=false,bool wrap=false)
+    {
+        var caption=new Label {Content=ReviewText(title,bold:true),Target=box,Style=null,Foreground=ReviewInk,
+            Padding=new Thickness(0,0,0,4)};
+        AutomationProperties.SetName(box,title);
+        box.Style=null;
+        box.Foreground=box.CaretBrush=ReviewInk;
+        box.Background=Brushes.White;
+        box.BorderBrush=primary ? ReviewAccent : ReviewEdge;
+        box.BorderThickness=new Thickness(primary ? 2 : 1);
+        box.Padding=new Thickness(8,4,8,4);
+        box.MinHeight=32;
+        box.VerticalContentAlignment=VerticalAlignment.Center;
+        if (wrap)
+        {
+            box.TextWrapping=TextWrapping.Wrap;
+            box.MaxHeight=88;
+            box.VerticalScrollBarVisibility=ScrollBarVisibility.Auto;
+        }
+        var field=new StackPanel {Margin=new Thickness(0,0,0,8)};
+        field.Children.Add(caption); field.Children.Add(box); panel.Children.Add(field);
+    }
+
+    private static void ConfigureReviewRows(ListBox rows)
+    {
+        rows.Style=null;
+        rows.Height=double.NaN;
+        rows.MaxHeight=110;
+        rows.Margin=new Thickness(0,4,0,10);
+        rows.BorderBrush=ReviewEdge;
+        rows.BorderThickness=new Thickness(1);
+        rows.Background=Brushes.White;
+        rows.Foreground=ReviewInk;
+        ScrollViewer.SetHorizontalScrollBarVisibility(rows,ScrollBarVisibility.Disabled);
+        AutomationProperties.SetName(rows,"选择要核对的对白");
+        rows.ItemContainerStyle=(Style)XamlReader.Parse("""
+            <Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
+                   xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='{x:Type ListBoxItem}'>
+                <Setter Property='Template'>
+                    <Setter.Value>
+                        <ControlTemplate TargetType='{x:Type ListBoxItem}'>
+                            <Border x:Name='Row' Background='#FFFFFF' BorderBrush='Transparent' BorderThickness='2' Padding='6,3'>
+                                <TextBlock x:Name='RowText' Style='{x:Null}' Foreground='#1A283B' Text='{Binding}'
+                                           TextWrapping='NoWrap' TextTrimming='CharacterEllipsis' ToolTip='{Binding}'/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property='IsMouseOver' Value='True'>
+                                    <Setter TargetName='Row' Property='Background' Value='#EDF4FC'/>
+                                </Trigger>
+                                <Trigger Property='IsSelected' Value='True'>
+                                    <Setter TargetName='Row' Property='Background' Value='#DCEBFA'/>
+                                    <Setter TargetName='RowText' Property='FontWeight' Value='SemiBold'/>
+                                </Trigger>
+                                <Trigger Property='IsKeyboardFocused' Value='True'>
+                                    <Setter TargetName='Row' Property='BorderBrush' Value='#265F9C'/>
+                                </Trigger>
+                                <Trigger Property='IsEnabled' Value='False'>
+                                    <Setter TargetName='RowText' Property='Foreground' Value='#45586F'/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            """);
+    }
+
     private ScrollViewer BuildAnkiPanel()
     {
         var panel=new StackPanel {Margin=new Thickness(8)};
@@ -214,6 +352,12 @@ internal sealed class CloudReviewWindow : Window
         _rebinding=true;
         _rows.ItemsSource=rows;
         _rows.SelectedItem=rows.FirstOrDefault(row=>row.Id==id) ?? rows.FirstOrDefault();
+        if (_cloud.LocalOnly)
+        {
+            _rows.Visibility=_reviewEditor.Visibility=rows.Length==0 ? Visibility.Collapsed : Visibility.Visible;
+            _reviewEmpty.Visibility=rows.Length==0 ? Visibility.Visible : Visibility.Collapsed;
+            if (_rows.SelectedItem is { } selected) _rows.ScrollIntoView(selected);
+        }
         _rebinding=false;
         if (!preserveEditor || id is null || (_rows.SelectedItem as CloudLookup)?.Id != id) BindRow();
         _status.Text=_cloud.Status;

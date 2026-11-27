@@ -13,7 +13,7 @@
 | `payload-manifest.json` | 同一干净文件树 972 个应用文件的相对路径、长度和摘要。NSIS 卸载器为安装版附加项，不在 ZIP 内。 | `557137312a4af704083b6c5850b89ab047ae436e7686a13aa77681c8055e79ee` |
 | `SHA256SUMS.txt` | 上列三个完整文件的校验清单。 | — |
 
-默认安装目录为 `%LOCALAPPDATA%\LLPlayer-Anki-Polish-144e1786`。如果目标已存在，请选同盘上级目录已存在的全新路径，不要覆盖旧包。Windows「已安装的应用」显示 `LLPlayer Original Review`。回退时先正常关闭新版，从该卸载项卸载，再打开原交付包。卸载只移除路径和 SHA-256 均匹配的程序文件；保留程序目录内的设置、清单外文件及同名但内容不同的文件。词本仍在 `%LOCALAPPDATA%\LLPlayer\PrivateReview`，不做迁移。
+默认安装目录为 `%LOCALAPPDATA%\LLPlayer-Anki-Polish-144e1786`。如果目标已存在，请选同盘上级目录已存在的全新路径，不要覆盖旧包。Windows「已安装的应用」显示 `LLPlayer Original Review`。回退时先正常关闭新版，从该卸载项卸载，再从保留的免安装 ZIP 解压到新目录并打开（仍是本发行候选，不是旧版）。卸载只移除路径和 SHA-256 均匹配的程序文件；保留程序目录内的设置、清单外文件及同名但内容不同的文件。词本仍在 `%LOCALAPPDATA%\LLPlayer\PrivateReview`，不做迁移。
 
 ## 实测证据
 
@@ -30,17 +30,16 @@
 
 ## 本机离线复核
 
-以下用 PowerShell 7.4+。快照与应用产物的目录不能互换；`-NoInject` 产物只用于旧入口编译验证，不交付。
+以下用 PowerShell 7.4+。清理后保留冻结源码、正式安装包、ZIP 和报告；重复的解包件与历史构建目录已移除。从最终 ZIP 完整解压到新目录，再按提示填入实际解压路径。快照与应用产物的目录不能互换；`-NoInject` 产物仅用于旧入口编译验证。
 
 ```powershell
 $root = 'C:\Users\Deeer\Desktop\美剧字幕翻译'
 $frozen = "$root\.pilot\polish-freeze-20261127-124604-ecae8750"
-$build = "$root\.pilot\polish-release-20261127-125305-144e1786"
+$package = Read-Host '用于回归的最终 ZIP 完整解压目录'
 $delivery = "$root\交付\LLPlayer-Anki-0.3.0-polish.1-20261127-125305-144e1786"
 & "$root\packaging\build\Freeze-PolishSource.ps1" -VerifySnapshot $frozen
-& "$root\packaging\build\Publish-PolishOffline.ps1" -VerifyPayload $build
-& "$root\packaging\checks\Invoke-PolishRegression.ps1" -Package "$build\payload"
-& "$root\packaging\ui-checks\Invoke-OffscreenUiQa.ps1" -Package "$build\payload"
+& "$root\packaging\checks\Invoke-PolishRegression.ps1" -Package $package
+& "$root\packaging\ui-checks\Invoke-OffscreenUiQa.ps1" -Package $package
 & "$root\packaging\installer\Test-Installer.ps1" -VerifyArtifactsOnly `
   -InstallerPath "$delivery\Setup.exe" `
   -InstallerSha256 '543019cd717479688eb0cc04fe7f6655261986425dd6556cc5e136afe1dd63ff' `
@@ -48,7 +47,7 @@ $delivery = "$root\交付\LLPlayer-Anki-0.3.0-polish.1-20261127-125305-144e1786"
   -ManifestPath "$delivery\payload-manifest.json"
 ```
 
-需要重建时，原发布脚本用 `-Snapshot $frozen` 生成新的隔离构建目录。安装器源码固定本次文件清单与本机 NSIS 3.12 编译器。`Build-Installer.ps1` 接收 `-PayloadRoot`、`-ManifestPath`、`-RunDirectory`；运行目录是工作区 `.pilot` 的直接子目录。本机安装测试还须显式提供新隔离目录、预期账户及其 Programs 路径；不使用已有安装位置。
+需要重建时，原发布脚本用 `-Snapshot $frozen` 生成新的隔离构建目录。截音工具取自保留的中文字幕错时补配版，并仍校验固定 SHA-256；也可用 `-ClipFfmpeg` 指定从最终 ZIP 解压出的同一文件。安装器源码固定本次文件清单与本机 NSIS 3.12 编译器。`Build-Installer.ps1` 接收 `-PayloadRoot`、`-ManifestPath`、`-RunDirectory`；运行目录是工作区 `.pilot` 的直接子目录。本机安装测试还须显式提供新隔离目录、预期账户及其 Programs 路径；不使用已有安装位置。
 
 ## 发布边界
 

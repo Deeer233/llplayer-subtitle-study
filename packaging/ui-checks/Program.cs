@@ -23,6 +23,8 @@ internal static partial class Program
     private const double SmallWidth = 450, SmallHeight = 430, RegularWidth = 640, RegularHeight = 730;
     private static readonly List<CaseResult> Results = [];
     private static readonly List<ImageResult> Images = [];
+    private static readonly List<string> UiThreadFaults = [];
+    private static StreamWriter? FaultLog;
     private static string RunDirectory = null!;
     private static PackageInfo? Input;
     private static string? Problem;
@@ -51,7 +53,8 @@ internal static partial class Program
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
             if (selfTest)
             {
-                _ = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                AttachFaultLog(app);
                 Check("WPF host: no HWND, detached DPI and PNG", TestHost);
             }
             else
@@ -70,12 +73,13 @@ internal static partial class Program
             Input,
             Scope = "Detached WPF client content, not a real monitor or non-client chrome. No product startup, playback, dialog, worker, or live data.",
             Fatal = Problem,
+            UiThreadFaults,
             Cases = Results,
             Images
         }, new JsonSerializerOptions { WriteIndented = true });
         var failed = Results.Count(item => !item.Passed);
-        Console.WriteLine($"Cases: {Results.Count - failed} passed, {failed} failed; images: {Images.Count}; report: {report.Name}");
-        return Problem is not null ? 2 : failed == 0 ? 0 : 1;
+        Console.WriteLine($"Cases: {Results.Count - failed} passed, {failed} failed; images: {Images.Count}; ui-thread faults: {UiThreadFaults.Count}; report: {report.Name}");
+        return Problem is not null ? 2 : failed == 0 && UiThreadFaults.Count == 0 ? 0 : 1;
     }
 
     private static void RunPackage(string file)
@@ -115,6 +119,7 @@ internal static partial class Program
         Assembly.SetEntryAssembly(assembly);
         Require(ReferenceEquals(Application.ResourceAssembly, assembly), "WPF application pack resources do not resolve to LLPlayer.");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        AttachFaultLog(app);
         _ = AssemblyLoadContext.Default.LoadFromAssemblyName(new AssemblyName("MaterialDesignThemes.Wpf"));
         // These are the theme entries used by the package App.xaml; do not instantiate LLPlayer.App.
         app.Resources.MergedDictionaries.Add((ResourceDictionary)XamlReader.Parse("""
@@ -125,6 +130,37 @@ internal static partial class Program
         {
             Source = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign2.Defaults.xaml")
         });
+    }
+
+    // WPF 的 UI 线程异常默认会弹「dotnet.exe - 应用程序错误」并继续运行，报告里看不到任何痕迹。
+    // 这里把异常原文落到 ui-thread-errors.log，并标记本次运行失败，避免弹窗掩盖真实错误。
+    private static void AttachFaultLog(Application app)
+    {
+        if (FaultLog is not null) return;
+        try
+        {
+            FaultLog = new StreamWriter(new FileStream(Path.Combine(RunDirectory, "ui-thread-errors.log"),
+                FileMode.Append, FileAccess.Write, FileShare.Read)) { AutoFlush = true };
+        }
+        catch (Exception openError)
+        {
+            Console.Error.WriteLine($"Cannot open ui-thread-errors.log: {openError.Message}");
+        }
+
+        void Record(string source, object error)
+        {
+            var text = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {source}: {error}";
+            UiThreadFaults.Add(text);
+            FaultLog?.WriteLine(text);
+            Console.Error.WriteLine(text);
+        }
+
+        app.DispatcherUnhandledException += (_, e) =>
+        {
+            Record("UI thread", Unwrap(e.Exception));
+            e.Handled = true;
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Record("AppDomain", e.ExceptionObject);
     }
 
     private static void Check(string name, Func<string> action)
