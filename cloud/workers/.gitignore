@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.generated/
+.dev.vars*
+.env*
+!.dev.vars.example
+*.backup.json

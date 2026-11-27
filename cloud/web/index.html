@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f6f7f4">
+  <title>原声词本</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header><strong>原声词本</strong><nav id="nav" hidden><button id="home">今日</button><button id="library">词库</button><button id="logout">退出</button></nav></header>
+  <main>
+    <p id="notice" role="status"></p>
+    <form id="login" hidden><h1>登录</h1><label for="password">私人账号口令</label><input id="password" type="password" autocomplete="current-password" required maxlength="256"><button class="primary">登录</button></form>
+    <section id="today" hidden><p class="eyebrow" id="date"></p><h1>今日复习</h1><p id="summary"></p><button id="start" class="primary">开始今日复习</button><button id="refresh">刷新</button><p id="offline" role="status"></p><button id="consent">确认这是我的私人设备</button></section>
+    <section id="quiz" hidden><p class="eyebrow" id="position"></p><h1 id="quiz-title">听原声</h1><p id="play-state" role="status"></p><div class="actions"><button id="replay" class="primary">▶ 重听</button><button id="skip">跳过</button></div>
+      <div class="actions"><button id="hint">提示</button><button id="reveal">揭晓</button></div>
+      <p id="hint-value" class="expression" hidden></p>
+      <article id="answer" hidden><h2 id="expression"></h2><p id="meaning"></p><p id="english" lang="en"></p><p id="chinese"></p><p id="source" class="eyebrow"></p></article>
+      <div id="rating" class="actions" hidden><button id="heard" class="primary">听懂了</button><button id="missed">没想起</button></div>
+      <div id="makeup" class="actions" hidden><button id="next">继续</button></div>
+    </section>
+    <section id="words" hidden><h1>私人词库</h1><ul id="word-list"></ul></section>
+  </main>
+</body>
+</html>

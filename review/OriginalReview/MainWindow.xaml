@@ -1,0 +1,82 @@
+<Window x:Class="OriginalReview.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="原声单词复习" Width="820" Height="660"
+    MinWidth="660" MinHeight="550" WindowStartupLocation="CenterScreen" Background="#F4F7F5"
+    Foreground="#182923" FontFamily="Microsoft YaHei UI" FontSize="14">
+  <Window.Resources>
+    <Style TargetType="Button">
+      <Setter Property="Padding" Value="12,7" /> <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="MinHeight" Value="34" /> <Setter Property="Background" Value="#FFFFFF" />
+      <Setter Property="BorderBrush" Value="#B7C8C0" /> <Setter Property="Foreground" Value="#182923" />
+    </Style>
+    <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="#C9E6D8" /> <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </Window.Resources>
+  <Grid Margin="24,20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,16" LastChildFill="False">
+      <TextBlock Text="原声单词复习" FontWeight="SemiBold" FontSize="23" VerticalAlignment="Center" />
+      <Button DockPanel.Dock="Right" Content="导入词表" Click="ImportWords" Style="{StaticResource Primary}" />
+    </DockPanel>
+    <TabControl x:Name="Tabs" Grid.Row="1" SelectionChanged="TabChanged" Background="White" BorderBrush="#CEDAD4">
+      <TabItem Header="今日复习" Padding="16,7">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="20">
+            <TextBlock x:Name="Counts" TextWrapping="Wrap" />
+            <WrapPanel Margin="0,12,0,0">
+              <Button Content="开始原声复习" Click="StartAudio" Style="{StaticResource Primary}" />
+              <Button Content="开始文字复习" Click="StartText" />
+            </WrapPanel>
+            <Border x:Name="Quiz" Visibility="Collapsed" BorderBrush="#CEDAD4" BorderThickness="0,1,0,0" Margin="0,18,0,0" Padding="0,16,0,0">
+              <StackPanel>
+                <TextBlock x:Name="Question" FontSize="21" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock x:Name="MediaStatus" TextWrapping="Wrap" Foreground="#52675E" Margin="0,5,0,8" />
+                <WrapPanel>
+                  <Button x:Name="ReplayButton" Content="重听" Click="Replay" />
+                  <Button x:Name="HintButton" Content="提示" Click="Hint" />
+                  <Button x:Name="RevealButton" Content="揭晓" Click="Reveal" Style="{StaticResource Primary}" />
+                  <Button Content="跳过" Click="Skip" />
+                </WrapPanel>
+                <StackPanel x:Name="Answer" Visibility="Collapsed" Margin="0,18,0,0">
+                  <TextBlock x:Name="AnswerText" TextWrapping="Wrap" Margin="0,0,0,12" />
+                  <WrapPanel>
+                    <Button x:Name="CorrectButton" Content="听懂了" Click="Correct" Style="{StaticResource Primary}" />
+                    <Button Content="没想起" Click="Incorrect" />
+                  </WrapPanel>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem x:Name="Library" Header="词库" Padding="16,7">
+        <Grid Margin="14">
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+          <DockPanel Margin="0,0,0,10" LastChildFill="True">
+            <WrapPanel DockPanel.Dock="Right">
+              <Button Content="新增" Click="AddCard" /> <Button Content="编辑" Click="EditCard" />
+              <Button Content="移除" Click="RemoveCard" />
+            </WrapPanel>
+            <TextBox x:Name="Filter" TextChanged="FilterChanged" VerticalContentAlignment="Center" Margin="0,0,8,0"
+                Padding="6" ToolTip="搜索表达或释义" AutomationProperties.Name="搜索词库" />
+          </DockPanel>
+          <WrapPanel Grid.Row="1" Margin="0,0,0,10">
+            <Button Content="加备选原声" Click="AddAlternate" />
+            <Button Content="批量补词典义" Click="FillDictionary" />
+            <CheckBox x:Name="OnlyPending" Content="只看待补释义" Checked="FilterChanged" Unchecked="FilterChanged" VerticalAlignment="Center" />
+          </WrapPanel>
+          <DataGrid x:Name="Rows" Grid.Row="2" IsReadOnly="True" AutoGenerateColumns="False"
+              CanUserAddRows="False" SelectionMode="Single" HeadersVisibility="Column" RowHeight="30">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="表达" Binding="{Binding Word}" Width="2*" />
+              <DataGridTextColumn Header="释义" Binding="{Binding Meaning}" Width="3*" />
+              <DataGridTextColumn Header="类型" Binding="{Binding Kind}" Width="95" />
+              <DataGridTextColumn Header="下次复习" Binding="{Binding Due}" Width="105" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </Grid>
+      </TabItem>
+    </TabControl>
+    <TextBlock x:Name="Status" Grid.Row="2" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="#455F54" />
+  </Grid>
+</Window>
