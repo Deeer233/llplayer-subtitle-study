@@ -3,7 +3,7 @@
 - 实际旧包：`C:\Users\Deeer\Desktop\美剧字幕翻译\交付\LLPlayer-Anki-20261126\LLPlayer.dll`。DLL SHA-256：`df72e857527532a51e72c95f594d0174d0b89806c71f60a9ef00c820de1ab413`。
 - 文本回退点：根仓库 `pre-polish`，`e00e6847bb8c6972b535bf0b546f716ae0e0d007`。上游仓库及旧包未改动；旧包带自己的配置，未作为新版输入。
 - 本地冻结副本：`C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-freeze-20261127-124604-ecae8750\source.zip`。316 个路径，逐项校验。ZIP SHA-256：`8aa81a38dd468d975bc4cf3ad0c89b736fe28a42680bbd1da63db66ca98b1786`。版本用上游 HEAD `da101d87681bb4d1d87a59884bca95043dd1158b`；实际脏源码以冻结清单为准。
-- 同一最终探针旧包记录：`C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-regression-6e0f781ccefd\report.md`，7/8。首轮记录留在 `C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-regression-e2a0bc74e525\report.md`。播放器 DLL、合成双音轨、临时词库、静音离屏 WPF 和模拟 Anki；未启动真实桌面播放器。
+- 同一最终探针旧包记录：`C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-regression-e956a620c7fb\report.md`，7/8。首轮记录留在 `C:\Users\Deeer\Desktop\美剧字幕翻译\.pilot\polish-regression-e2a0bc74e525\report.md`。播放器 DLL、合成双音轨、临时词库、静音离屏 WPF 和模拟 Anki；未启动真实桌面播放器。
 
 | # | 旧包复跑 | 证据摘要 |
 |---|---|---|
@@ -16,4 +16,4 @@
 | 7 | 通过 | 导入去重；无效行、无效 UTF-8、重复列及超大输入有断言。 |
 | 8 | 通过 | 六列 TSV、被选 MP3 的摘要和信号吻合；撤回及纯文字不可导出。 |
 
-同一探针必须对实际旧、新包各复跑。功能通过不等于真实播放器入口、实际扬声器、真实 Anki 或手机已验收。
+同一探针对实际旧、新包复跑。旧包不提供独立取消按钮或可测进度，只对新版追加这两项断言；旧包表中第 4 项仍按两包共有的确认门禁和字段重锁判定。功能通过不等于真实播放器入口、实际扬声器、真实 Anki 或手机已验收。

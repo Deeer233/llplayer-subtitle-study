@@ -10,6 +10,8 @@ using static Program;
 
 internal static class ReviewUi
 {
+    private enum Interruption { None, Edit, Cancel }
+
     private static readonly (string Field, string Value)[] ChangedFields =
     [
         ("_expression", "pitch the idea"), ("_meaning", "介绍"),
@@ -81,6 +83,8 @@ internal static class ReviewUi
             int completed = 0;
             Exception? mediaFailure = null;
             var click = typeof(Button).GetMethod("OnClick", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            var cancel = window.GetType().GetField("_cancel", Members)?.GetValue(window) as Button;
+            var stateFile = InRun("preview-library/state.json");
 
             bool Locked() => !verify.IsEnabled && !pair.IsEnabled;
             void Record(bool pass, string message)
@@ -88,7 +92,7 @@ internal static class ReviewUi
                 if (pass) Pass(message);
                 else { Console.WriteLine("FAIL " + message); problems.Add(message); }
             }
-            void Listen(bool recordPhases, bool interrupt = false)
+            void Listen(bool recordPhases, Interruption interrupt = Interruption.None)
             {
                 var current = (MediaPlayer?)audioField.GetValue(window);
                 Watch(current);
@@ -105,13 +109,41 @@ internal static class ReviewUi
                 Guard(mediaFailure is null, "WPF preview failed: " + mediaFailure);
                 var duration = audio?.NaturalDuration is { HasTimeSpan: true } known ? known.TimeSpan : TimeSpan.Zero;
                 var position = audio?.Position ?? TimeSpan.Zero;
-                if (interrupt)
+                if (interrupt != Interruption.None)
                 {
                     Guard(completed == last && duration > position && position > TimeSpan.Zero, "did not observe a partial preview to interrupt");
-                    var field = Field<TextBox>(window, "_english");
-                    string before = field.Text;
-                    field.Text += "!";
-                    field.Text = before;
+                    string action;
+                    if (interrupt == Interruption.Cancel)
+                    {
+                        var progress = Field<ProgressBar>(window, "_progress");
+                        var time = Field<TextBlock>(window, "_progressText");
+                        Until(() => !progress.IsIndeterminate && progress.Value > 0 || completed != last,
+                            "determinate playback progress never advanced", 3);
+                        var elapsed = progress.Value;
+                        Until(() => progress.Value > elapsed || completed != last, "determinate playback progress froze", 3);
+                        Guard(completed == last && Math.Abs(progress.Maximum - duration.TotalSeconds) < 0.01
+                            && progress.Value > elapsed && progress.Value < progress.Maximum
+                            && time.Visibility == Visibility.Visible && time.Text.EndsWith(" s", StringComparison.Ordinal),
+                            "visible progress did not track measured WPF position and duration");
+                        Pass($"measured playback progress advanced from {elapsed:F3}s to {progress.Value:F3}s of {progress.Maximum:F3}s");
+                        var clip = Field<string>(window, "_preview");
+                        var beforeSave = FileHash(stateFile);
+                        Guard(cancel is { IsEnabled: true, Visibility: Visibility.Visible } && File.Exists(clip), "active audition has no visible cancel or temporary clip");
+                        click.Invoke(cancel, null);
+                        Guard(!File.Exists(clip) && FileHash(stateFile) == beforeSave
+                            && !Field<Button>(window, "_replay").IsEnabled
+                            && Field<TextBlock>(window, "_feedback").Text.Contains("已取消试听", StringComparison.Ordinal),
+                            "cancelled audition left a temporary clip, changed disk state, or did not report cancellation");
+                        action = "the actual Cancel button";
+                    }
+                    else
+                    {
+                        var field = Field<TextBox>(window, "_english");
+                        string before = field.Text;
+                        field.Text += "!";
+                        field.Text = before;
+                        action = "editing";
+                    }
                     bool unlocked = false;
                     var wait = Stopwatch.StartNew();
                     Until(() =>
@@ -120,7 +152,7 @@ internal static class ReviewUi
                         return wait.Elapsed > duration + TimeSpan.FromMilliseconds(150);
                     }, "interrupted-media observation timed out", 5);
                     Record(!unlocked && completed == last && LibraryChecks.CardsOf(cloud).Length == 0,
-                        "editing during a partial clip cancels its audition; no unlock or save after its former end time");
+                        $"{action} during a partial clip cancels its audition; no unlock or save after its former end time");
                     return;
                 }
                 if (recordPhases)
@@ -155,16 +187,16 @@ internal static class ReviewUi
             {
                 Listen(recordPhases: false);
                 click.Invoke(pair, null);
-                Until(() => LibraryChecks.CardsOf(cloud).Length == 1 && Locked(), "two-dialogue button did not save first line");
+                Until(() => LibraryChecks.CardsOf(cloud).Length == 1 && Locked() && preview.IsEnabled, "two-dialogue button did not save first line");
                 var draft = LibraryChecks.CardsOf(cloud).Single();
                 Guard(Get<string>(draft, "Status") == "draft" && Get<int>(draft, "Count") == 1 && LibraryChecks.Jobs(cloud).Length == 0,
                     "two-dialogue button queued the first line instead of saving a draft");
                 Call(window, "Select", second);
-                Guard(Get<Guid>(rows.SelectedItem, "Id") == second, "could not select the second fixture line");
+                Guard(rows.SelectedItem is { } next && Get<Guid>(next, "Id") == second, "could not select the second fixture line");
                 Field<TextBox>(window, "_meaning").Text = Meaning;
                 Listen(recordPhases: false);
                 click.Invoke(pair, null);
-                Until(() => LibraryChecks.Jobs(cloud).Length == 1 && Locked(), "two-dialogue button did not queue the second line");
+                Until(() => LibraryChecks.Jobs(cloud).Length == 1 && Locked() && preview.IsEnabled, "two-dialogue button did not queue the second line");
                 var active = LibraryChecks.CardsOf(cloud).Single();
                 Guard(Get<string>(active, "Status") == "active" && Get<int>(active, "Count") == 2
                     && Get<Guid>(LibraryChecks.Jobs(cloud).Single(), "ExampleId") == second && network.Calls == 0,
@@ -174,7 +206,22 @@ internal static class ReviewUi
             }
 
             Record(Locked(), "both confirmation buttons initially locked even after entering a meaning");
-            Listen(recordPhases: false, interrupt: true);
+            Listen(recordPhases: false, Interruption.Edit);
+            if (cancel is not null)
+            {
+                var beforeSave = FileHash(stateFile);
+                string[] PreviewFiles() => Directory.GetFiles(Path.GetTempPath(), "original-review-*.mp3").Order().ToArray();
+                var beforeClips = PreviewFiles();
+                click.Invoke(preview, null);
+                Guard(cancel.IsEnabled && cancel.Visibility == Visibility.Visible && Locked(), "clip preparation was not cancellable");
+                click.Invoke(cancel, null);
+                Until(() => preview.IsEnabled && !cancel.IsEnabled, "clip preparation did not leave its cancelled state");
+                Guard(Locked() && beforeClips.SequenceEqual(PreviewFiles()) && FileHash(stateFile) == beforeSave
+                    && Field<TextBlock>(window, "_feedback").Text.Contains("已取消", StringComparison.Ordinal),
+                    "cancelled clip preparation left a preview, allowed confirmation, changed disk state, or did not report cancellation");
+                Pass("actual Cancel button stopped the clip preparation command before accepting audio or saving");
+                Listen(recordPhases: false, Interruption.Cancel);
+            }
             Listen(recordPhases: true);
             foreach (var (name, value) in ChangedFields)
             {
@@ -188,7 +235,7 @@ internal static class ReviewUi
             }
             Guard(LibraryChecks.CardsOf(cloud).Length == 0, "preview or field edits alone persisted a card");
             click.Invoke(verify, null);
-            Until(() => LibraryChecks.CardsOf(cloud).Any(c => Get<string>(c, "Status") == "active"),
+            Until(() => LibraryChecks.CardsOf(cloud).Any(c => Get<string>(c, "Status") == "active") && Locked() && preview.IsEnabled,
                 "actual one-dialogue verify button did not save the listened card");
             Guard(LibraryChecks.Jobs(cloud).Length == 1 && network.Calls == 0, "UI verify did not stage exactly one Anki job locally");
             Pass("actual confirm button saved a listened single-dialogue card and queued it locally");
