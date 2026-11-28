@@ -10,7 +10,7 @@
 | 本地模型接口和 Windows 启动流程 | `node --test pilot/study-model.test.mjs` | 本机 `pwsh`；测试用回环模拟响应，不验证真实模型的翻译质量 |
 | 独立 WPF 工具 | `dotnet build .\review\OriginalReview\OriginalReview.csproj -c Release` | Windows、.NET 10 SDK；只是编译，不等于发布 |
 | 独立复习逻辑 | `pwsh -NoProfile -File .\review\check-review.ps1` | 需要本地 `.pilot/StudyDictionary.zip`，也可通过 `-Dictionary` 指定；见[模块说明](../review/README.md) |
-| 桌面进程联调 | `node --test cloud/checks/desktop.test.mjs` | 构建 `cloud/checks/DesktopChecks/DesktopChecks.csproj` 并设置 `REVIEW_DESKTOP_DLL`；工程还引用未提交的上游 `StudyDialogue.cs`；未设置 DLL 时跳过 |
+| 桌面进程联调 | `node --test cloud/checks/desktop.test.mjs` | 构建 `cloud/checks/DesktopChecks/DesktopChecks.csproj` 并设置 `REVIEW_DESKTOP_DLL`；此检查仍需在根目录的 `upstream/LLPlayer` 里应用下面的补丁以提供 `StudyDialogue.cs`；未设置 DLL 时跳过 |
 | 浏览器检查 | `node --test cloud/checks/browser.test.mjs` | 设置 `REVIEW_PLAYWRIGHT` 为本机可加载的 Playwright 模块路径；需要 Chromium，可用 `REVIEW_CHROME` 指定；未配置 Playwright 时跳过 |
 | 候选包、WPF 离屏和 NSIS 验收 | [候选包记录](../packaging/RELEASE.md) · [离屏检查](../packaging/ui-checks/README.md) | Windows、完整候选产物，及脚本要求的本机依赖；不在 GitHub CI 内 |
 
@@ -26,9 +26,20 @@ node pilot/feasibility.mjs timeline path/to/episode.en.srt --anchors path/to/anc
 
 `translate` 是本地模型试验，不是字幕搜索或转录入口。它要求在 Ollama 与运行命令的环境中均设置 `OLLAMA_NO_CLOUD=1`，只连接 `127.0.0.1:11434`，仅接受已安装的 `qwen3:4b` 或 `qwen3:8b`，不自动下载。输入是本地采样 JSON，不是视频；以[调用测试](../pilot/feasibility.test.mjs)和[实现](../pilot/providers.mjs)为准。结果必须人工核对，不能当作已验真的双语字幕。
 
-## 为什么干净克隆不能重建播放器
+## 从干净克隆构建 Windows 播放器
 
-- [`upstream/LLPlayer`](https://github.com/umlx5h/LLPlayer) 是独立的上游工作副本，不是本仓库的子模块。冻结脚本要求基线 `da101d87681bb4d1d87a59884bca95043dd1158b` 或其后代；本项目本机候选还依赖上游目录中未发布的工作改动，仅克隆该提交不够。
-- 本机维护者需具备对应工作副本、词典材料、受校验的 FFmpeg、离线运行时/NuGet 依赖与打包工具。先冻结，再对快照构建；不要直接把未审计的本机目录或打包件改成 Git 跟踪文件。
-- 可用 `Freeze-PolishSource.ps1 -VerifySnapshot` 核对冻结目录；`Publish-PolishOffline.ps1 -Snapshot` 接收快照，`-VerifyPayload` 接收发布运行目录。它们不是同一路径。安装器按载荷清单构建和验收，完整流程见[发布记录](../packaging/RELEASE.md)。
-- 评审真实播放、DPI、图形安装、真机 Anki 或手机同步时，单独记录环境与结果。合成媒体和离屏检查不能替代人工验收。
+要求：Windows x64、Git、PowerShell 7.4+、.NET 10 SDK（本地使用 `10.0.404`）。默认需要访问 GitHub 和 NuGet；也可用 `-UpstreamSource` 指定本地 Git 镜像，用 `-NuGetSource` 指定本地包源。
+
+```powershell
+pwsh -NoProfile -File .\packaging\build\Build-PlayerFromSource.ps1
+```
+
+脚本在 `.pilot/polish-source-build-*` 创建新工作目录，取得 [LLPlayer 固定提交](https://github.com/umlx5h/LLPlayer/tree/da101d87681bb4d1d87a59884bca95043dd1158b)，应用[从本机候选冻结快照提取的源码补丁](../packaging/build/LLPlayer-da101d8.patch)，再注入 [`cloud/desktop`](../cloud/desktop)、复习工具共用代码和 [`packaging/ui`](../packaging/ui)。不会修改已有的 `upstream/LLPlayer`。成功时输出 `player/LLPlayer.exe` 的完整路径。只需查看整合后的主 `.csproj` 时加 `-PrepareOnly`。
+
+这是依赖本机 .NET 10 Desktop Runtime 的开发构建，不会自动启动，也不包含完整词典包、专用于截音的 FFmpeg CLI 或 NSIS 安装器。不承诺与本机候选二进制逐字节相同。
+
+### 重建本机发布候选
+
+离线候选仍需对应源码快照、词典材料、受校验的 FFmpeg CLI、离线 SDK/NuGet 和打包工具。`Freeze-PolishSource.ps1 -VerifySnapshot` 校验冻结目录；`Publish-PolishOffline.ps1 -Snapshot` 接收快照，`-VerifyPayload` 接收发布运行目录。完整流程和分发检查见[发布记录](../packaging/RELEASE.md)。
+
+真实播放、图形安装、真机 Anki 和手机同步需独立验收；成功编译不能替代这些检查。

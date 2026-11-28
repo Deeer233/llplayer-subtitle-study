@@ -2,12 +2,13 @@
 
 用已有的英文字幕学习：在 Windows 播放器里查词、回听当前句，把自己核对过的原声和词义存成复习卡。可以留在本机，也可以手动导入 Anki，或使用独立的私人复习站。
 
-> **这是源码与验证仓库，不是安装包下载页。** 本机候选包、影视素材、词典构建缓存和带补丁的 LLPlayer 上游工作副本没有提交。干净克隆可运行下面的 Node 检查和本地复习站，但不能据此重建当前完整播放器候选。
+> **Windows x64 暂无可下载的安装包。** [GitHub Releases](https://github.com/Deeer233/llplayer-subtitle-study/releases) 是发布入口；本机候选暂不分发。开发者可以从干净克隆[构建播放器](docs/DEVELOPMENT.md#从干净克隆构建-windows-播放器)，不需要维护者的上游工作副本。
 
 ## 选一个入口
 
 | 我想做什么 | 从哪里开始 |
 | --- | --- |
+| 下载 Windows 安装版或免安装版 | [GitHub Releases](https://github.com/Deeer233/llplayer-subtitle-study/releases) · [当前发布状态](packaging/RELEASE.md#发布状态) |
 | 已有 Windows 候选包，想做第一张原声卡 | [完整使用说明](LLPlayer原声卡-完整使用说明.md) |
 | 把原声卡导到桌面 Anki，再同步到手机 | [Anki 导出说明](cloud/deploy/ankiweb-export.md) · [三卡验收](cloud/deploy/ankiweb-three-card-trial.md) |
 | 导入现有词表，独立做文字或原声复习 | [独立 Windows 复习工具](review/README.md) |
@@ -45,7 +46,7 @@ node cloud/cli.mjs serve
 | [`pilot/`](pilot/) | 字幕探测、时间轴核对、本地模型试验及人工验收工具 |
 | [`cloud/`](cloud/) | Node/SQLite 私人复习站、Web 界面、桌面集成及检查；`workers/` 是单独的 Cloudflare 适配实现 |
 | [`review/`](review/) | 独立的 WPF 复习工具、词表样例和检查 |
-| [`packaging/`](packaging/) | Windows 候选冻结、离线构建、NSIS 安装器与验收 |
+| [`packaging/`](packaging/) | 固定上游补丁、播放器构建、候选冻结、NSIS 安装器与验收 |
 
 当前以 Windows x64 本机候选和回归测试为主，不承诺安装包在干净机器可用，不代表真机同步、真实 Anki 或生产部署已验收。构建产物与本机验收路径见[候选包记录](packaging/RELEASE.md)，它们不是仓库中的下载链接。
 
