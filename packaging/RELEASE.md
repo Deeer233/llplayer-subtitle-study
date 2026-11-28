@@ -58,6 +58,6 @@ $delivery = "$root\交付\LLPlayer-Anki-0.3.0-polish.1-20261127-125305-144e1786"
 当前文件仅供本机验收。上传安装器和免安装 ZIP 前，应完成：
 
 - 为实际分发的版本准备对应源码、构建与安装脚本、修改说明及 LLPlayer GPL 文本。基线链接不能替代本项目的修改源码。
-- 分别核对 `FFmpeg/*.dll` 与 `ClipTools/ffmpeg.exe` 的准确版本、构建参数、适用许可证和对应源码；核对 ECDICT 数据、运行时依赖及包内媒体的再分发材料。
+- 本机实测：`FFmpeg/*.dll` 的版本标记均为 `n8.0-16-gd8605a6b55-20250925`；`ClipTools/ffmpeg.exe -version` 报告 `9.0.2-essentials_build-www.gyan.dev`，构建参数含 `--enable-gpl --enable-version3 --enable-static`。仍须分别补齐两套构建的对应源码和适用许可，并核对 ECDICT 数据、运行时依赖及包内媒体的再分发材料。
 - 在干净的 Windows x64 环境验收启动、安装及卸载。候选安装器未签名；正式发布前处理签名和下载说明。
 - 从已评审的 `main` 提交创建版本标签。先以草稿上传经复验的安装器、免安装 ZIP、`SHA256SUMS.txt`、对应源码和许可资料，再核对下载后的 SHA-256 和发布说明。GitHub 自动生成的源码压缩包不包含固定提交的上游源码，不能单独作为对应源码交付。
