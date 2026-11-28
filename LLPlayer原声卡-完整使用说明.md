@@ -12,7 +12,7 @@
 
 ## 2. 安装、免安装与升级
 
-[打开本次交付目录](交付/LLPlayer-Anki-0.3.0-polish.1-20261127-125305-144e1786/)。默认使用 Windows 11 x64。候选包已带 .NET 桌面运行时、FFmpeg 截音工具和本地词典；使用已有字幕和制作原声卡，不用先装 SDK、另找 FFmpeg 或下载翻译模型。桌面 Anki 和 AnkiConnect 需自行安装，仅在直接写入 Anki 时需要。干净机器的原生依赖未核齐；上游对 Whisper 语音识别和 OCR 另列 Visual C++ 2022 及以上运行库要求。
+本机候选交付目录为 `交付/LLPlayer-Anki-0.3.0-polish.1-20261127-125305-144e1786/`，不随 GitHub 仓库提供。默认使用 Windows 11 x64。候选包已带 .NET 桌面运行时、FFmpeg 截音工具和本地词典；使用已有字幕和制作原声卡，不用先装 SDK、另找 FFmpeg 或下载翻译模型。桌面 Anki 和 AnkiConnect 需自行安装，仅在直接写入 Anki 时需要。干净机器的原生依赖未核齐；上游对 Whisper 语音识别和 OCR 另列 Visual C++ 2022 及以上运行库要求。
 
 | 方式 | 操作 |
 |---|---|

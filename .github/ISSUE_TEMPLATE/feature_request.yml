@@ -1,0 +1,22 @@
+name: 功能建议
+description: 建议改进字幕学习、原声复习、同步或维护流程
+title: '[建议] '
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 现在遇到的问题
+      description: '描述使用场景、当前流程和卡点。请勿附私人媒体、词库或凭据。'
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 希望实现的行为
+      description: '给出可观察的结果；若涉及音频或同步，注明是否应默认离线、是否需要用户确认。'
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 其他方案或兼容性要求

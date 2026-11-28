@@ -2,6 +2,10 @@
 
 批次 `20261127-125305-144e1786`。主程序版本 `0.3.0+da101d87681bb4d1d87a59884bca95043dd1158b`，作者 `umlx5h`。
 
+## 发布状态
+
+[GitHub Releases](https://github.com/Deeer233/llplayer-subtitle-study/releases) 暂无可下载资产。下面记录的是本机验收过的安装器和免安装 ZIP，不是公开发布。播放器改动和构建脚本见[源码重建说明](../docs/DEVELOPMENT.md#从干净克隆构建-windows-播放器)。
+
 ## 交付与使用
 
 交付目录：`C:\Users\Deeer\Desktop\美剧字幕翻译\交付\LLPlayer-Anki-0.3.0-polish.1-20261127-125305-144e1786`。
@@ -51,4 +55,9 @@ $delivery = "$root\交付\LLPlayer-Anki-0.3.0-polish.1-20261127-125305-144e1786"
 
 ## 发布边界
 
-仅用于本机验收，不对外分发。可信签名、完整对应源码与许可材料、干净机原生依赖尚未核齐。根仓库仅有本地提交与 `pre-polish` 回退标签；没有 `origin`，待推远端。交付核验和记录落盘后才请求正常关机，不强制关闭应用。
+当前文件仅供本机验收。上传安装器和免安装 ZIP 前，应完成：
+
+- 为实际分发的版本准备对应源码、构建与安装脚本、修改说明及 LLPlayer GPL 文本。基线链接不能替代本项目的修改源码。
+- 本机实测：`FFmpeg/*.dll` 的版本标记均为 `n8.0-16-gd8605a6b55-20250925`；`ClipTools/ffmpeg.exe -version` 报告 `9.0.2-essentials_build-www.gyan.dev`，构建参数含 `--enable-gpl --enable-version3 --enable-static`。仍须分别补齐两套构建的对应源码和适用许可，并核对 ECDICT 数据、运行时依赖及包内媒体的再分发材料。
+- 在干净的 Windows x64 环境验收启动、安装及卸载。候选安装器未签名；正式发布前处理签名和下载说明。
+- 从已评审的 `main` 提交创建版本标签。先以草稿上传经复验的安装器、免安装 ZIP、`SHA256SUMS.txt`、对应源码和许可资料，再核对下载后的 SHA-256 和发布说明。GitHub 自动生成的源码压缩包不包含固定提交的上游源码，不能单独作为对应源码交付。

@@ -15,6 +15,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Polish.Common.ps1')
+. (Join-Path $PSScriptRoot 'Polish.Ui.ps1')
 
 function Assert-PayloadPaths([string[]]$Names) {
     foreach ($name in $Names) {
@@ -55,34 +56,6 @@ if ($PSCmdlet.ParameterSetName -eq 'Verify') {
     $count = Confirm-PublishedPayload $run
     [pscustomobject]@{ Run = $run; PayloadFiles = $count; Verified = $true }
     return
-}
-
-function Get-PolishUiFiles {
-    $ui = Assert-PolishPlainPath (Join-PolishPath $script:PolishRoot 'packaging/ui') -Directory
-    foreach ($candidate in [IO.Directory]::EnumerateFileSystemEntries($ui)) {
-        $name = [IO.Path]::GetFileName($candidate)
-        if ($name -notmatch '\.cs$') { continue }
-        if (Test-PolishPrivatePath $name) { throw "Private path is not permitted as an injected source: $name" }
-        $null = Assert-PolishPlainPath $candidate
-        $name
-    }
-}
-
-function Set-PolishCallSite([string]$Path, [string]$Pattern) {
-    $Path = Assert-PolishPlainPath $Path
-    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-    try {
-        if ($stream.Length -gt 1MB) { throw "Unexpectedly large call-site source: $Path" }
-        $bytes = [byte[]]::new([int]$stream.Length)
-        $stream.ReadExactly($bytes)
-        $text = $script:PolishUtf8.GetString($bytes)
-        $regex = [regex]::new($Pattern, [Text.RegularExpressions.RegexOptions]::Multiline)
-        if ($regex.Matches($text).Count -ne 1) { throw "Expected exactly one original call site: $Path" }
-        $patched = $regex.Replace($text, '${1}PolishedReviewWindow${2}')
-        $stream.Position = 0
-        $stream.Write($script:PolishUtf8.GetBytes($patched))
-        $stream.SetLength($stream.Position)
-    } finally { $stream.Dispose() }
 }
 
 function Invoke-PolishDotnet([string[]]$Arguments, [string]$LogName) {
@@ -157,16 +130,7 @@ if ($projectXml.SelectSingleNode('/Project/PropertyGroup/Authors').InnerText -cn
 }
 
 if (!$NoInject) {
-    $desktopRel = 'cloud/desktop'
-    $frozenDesktop = @($frozen.files.path | Where-Object { $_ -like 'cloud/desktop/*' })
-    $null = New-PolishPathIndex ($frozenDesktop + @($uiNames | ForEach-Object { "$desktopRel/$_" }))
-    foreach ($name in $uiNames) {
-        Copy-PolishInput (Join-PolishPath $script:PolishRoot "packaging/ui/$name") (Join-PolishPath $src "$desktopRel/$name")
-    }
-    Set-PolishCallSite (Join-PolishPath $src 'upstream/LLPlayer/LLPlayer/Controls/SubtitlesControl.xaml.cs') `
-        '^([ \t]*)CloudReviewWindow(\.Open\(id\);[ \t]*\r?$)'
-    Set-PolishCallSite (Join-PolishPath $src 'upstream/LLPlayer/LLPlayer/Resources/PopupMenu.xaml.cs') `
-        '^([ \t]*if \(PrivateReviewVisibility == Visibility\.Visible\) LLPlayer\.Services\.)CloudReviewWindow(\.Open\(\);[ \t]*\r?$)'
+    Add-PolishUi $src $uiNames
 }
 
 $packages = New-PolishDirectory (Join-PolishPath $stage 'nuget-packages')
